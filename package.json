@@ -1,0 +1,31 @@
+{
+  "name": "@pilotduty/sms-core",
+  "version": "0.1.0",
+  "description": "PilotDuty — shared SMS send pipeline (phone normalization, suppression, consent, quiet hours, caps, composition, Twilio send, message log). Consumed by PilotDutySaas, PilotDutyFunctions and the iOS relay.",
+  "private": true,
+  "license": "UNLICENSED",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist",
+    "src"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "release:check": "npm run build && npm test && git diff --exit-code -- dist"
+  },
+  "dependencies": {
+    "libphonenumber-js": "^1.12.34"
+  },
+  "devDependencies": {
+    "@types/node": "^20.17.0",
+    "typescript": "^5.5.4",
+    "vitest": "^2.1.9"
+  }
+}
