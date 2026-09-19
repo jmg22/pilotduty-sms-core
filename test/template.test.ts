@@ -66,9 +66,26 @@ describe('applyFooter', () => {
     expect(r.footerPushedSegment).toBe(true);
   });
 
-  it('French footer flips to UCS-2 because of "ê" (flagged to the pilot)', () => {
-    expect(calculateSmsSegments(STOP_FOOTERS.fr!).encoding).toBe('UCS-2');
+  it('French footer is 100 % GSM-7 (P8, v0.1.1)', () => {
+    expect(STOP_FOOTERS.fr).toBe(" Répondez STOP pour ne plus recevoir, AIDE pour de l'aide.");
+    expect(calculateSmsSegments(STOP_FOOTERS.fr!)).toMatchObject({ encoding: 'GSM-7', segments: 1 });
+    expect(calculateSmsSegments(STOP_FOOTERS.en!)).toMatchObject({ encoding: 'GSM-7', segments: 1 });
     expect(footerFor('fr-CA')).toBe(STOP_FOOTERS.fr);
     expect(footerFor('de')).toBe(STOP_FOOTERS.en);
+  });
+
+  it('French GSM-7 body + footer stays GSM-7 and fits one segment', () => {
+    const body = 'PilotDuty: votre vol avec Totem Aviation est le 12 sept. 14:30, avion C-GXYZ.';
+    const fr = applyFooter(body, footerFor('fr'), true);
+    expect(fr.body).toBe(body + STOP_FOOTERS.fr);
+    expect(fr.encoding).toBe('GSM-7');
+    expect(fr.segments).toBe(1);
+    expect(fr.footerPushedSegment).toBe(false);
+  });
+
+  it('a non-GSM-7 character in the BODY still flips the message to UCS-2', () => {
+    const fr = applyFooter('PilotDuty: vol confirmé, à bientôt. Êtes-vous prêt ?', footerFor('fr'), true);
+    expect(fr.encoding).toBe('UCS-2');
+    expect(fr.segments).toBe(2);
   });
 });

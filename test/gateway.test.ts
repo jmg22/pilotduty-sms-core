@@ -213,11 +213,11 @@ describe('createSmsGateway — pipeline (TOT-187)', () => {
       expect(r).toMatchObject({ footerApplied: true });
     });
 
-    it('uses the French footer for fr-CA and warns when it pushes a second segment', async () => {
+    it('uses the French footer for fr-CA — GSM-7, one segment, no warning (P8, v0.1.1)', async () => {
       const r = await gateway.send(baseInput({ locale: 'fr-CA' }));
-      expect(r).toMatchObject({ status: 'sent', encoding: 'UCS-2' });
+      expect(r).toMatchObject({ status: 'sent', encoding: 'GSM-7', segments: 1 });
       expect(twilio.calls[0]?.body.endsWith(STOP_FOOTERS.fr!)).toBe(true);
-      expect(logs.entries.some((e) => e.msg === 'footer_pushed_second_segment')).toBe(true);
+      expect(logs.entries.some((e) => e.msg === 'footer_pushed_second_segment')).toBe(false);
     });
 
     it('accepts a pre-composed body and still applies the footer', async () => {

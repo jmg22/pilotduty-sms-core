@@ -20,9 +20,10 @@ export declare function renderTemplate(template: string, params: Record<string, 
  * STOP/HELP footers, TOT-199 wording. Keyed by base language; anything else
  * falls back to English. Overridable through `createSmsGateway({ footers })`.
  *
- * ⚠ The French wording contains `ê` (arrêter), which is NOT GSM-7: it flips
- * the whole message to UCS-2 (70 chars/segment). Flagged to the pilot; the
- * gateway logs `footer_pushed_second_segment` when that costs a segment.
+ * Both wordings are 100 % GSM-7 (decision P8, v0.1.1): the French one avoids
+ * `ê` ("arrêter"), which flipped the whole message to UCS-2 (70 chars/segment)
+ * in v0.1.0. `é` IS part of the GSM-7 default alphabet. The gateway still logs
+ * `footer_pushed_second_segment` when the footer alone costs a segment.
  */
 export declare const STOP_FOOTERS: Readonly<Record<string, string>>;
 export declare function baseLanguage(locale: string | undefined): string;

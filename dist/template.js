@@ -29,13 +29,14 @@ function renderTemplate(template, params) {
  * STOP/HELP footers, TOT-199 wording. Keyed by base language; anything else
  * falls back to English. Overridable through `createSmsGateway({ footers })`.
  *
- * ⚠ The French wording contains `ê` (arrêter), which is NOT GSM-7: it flips
- * the whole message to UCS-2 (70 chars/segment). Flagged to the pilot; the
- * gateway logs `footer_pushed_second_segment` when that costs a segment.
+ * Both wordings are 100 % GSM-7 (decision P8, v0.1.1): the French one avoids
+ * `ê` ("arrêter"), which flipped the whole message to UCS-2 (70 chars/segment)
+ * in v0.1.0. `é` IS part of the GSM-7 default alphabet. The gateway still logs
+ * `footer_pushed_second_segment` when the footer alone costs a segment.
  */
 exports.STOP_FOOTERS = {
     en: ' Reply STOP to opt out, HELP for help.',
-    fr: " Répondez STOP pour arrêter, AIDE pour de l'aide.",
+    fr: " Répondez STOP pour ne plus recevoir, AIDE pour de l'aide.",
 };
 function baseLanguage(locale) {
     return (locale ?? 'en').toLowerCase().split(/[-_]/)[0] ?? 'en';
