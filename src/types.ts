@@ -28,8 +28,10 @@ export interface ConsentEvidence {
   note?: string;
   /** TOT-207 — bumped on 30003/30005, number suspended after 3 (`consentEvidencePatch`). */
   unreachableCount?: number;
-  /** TOT-207 — `unreachableCount` reached `UNREACHABLE_SUSPEND_AFTER`. */
+  /** TOT-207 — `unreachableCount` reached `UNREACHABLE_SUSPEND_AFTER`. Refused at send while `true`. */
   unreachableSuspended?: boolean;
+  /** Last lift of the suspension (`unreachableLiftPatch`). */
+  unreachableLiftedAt?: Date;
   /** TOT-207 — 30006: landline, never try again. */
   landline?: boolean;
   /** TOT-207 — 21211 / 21614 / 21408: invalid number or region, never try again. */
@@ -86,6 +88,10 @@ export type SuppressReason =
   | 'invalid_phone'
   | 'opted_out'
   | 'reminder_without_booking'
+  /** TOT-207 marks on `sms_consent.evidence` (v0.2.1, P49 §5). */
+  | 'invalid'
+  | 'landline'
+  | 'unreachable_suspended'
   | 'rate_limited'
   | 'org_cap'
   | 'global_cap'

@@ -49,6 +49,7 @@ export {
   isPermanentTwilioError,
   twilioErrorClassOf,
   consentEvidencePatch,
+  unreachableLiftPatch,
   redactPhoneNumbers,
   TWILIO_ERROR_ACTIONS,
   TWILIO_ERROR_SEVERITIES,

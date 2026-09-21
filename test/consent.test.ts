@@ -61,3 +61,49 @@ describe('decideConsent — TOT-193 table', () => {
     });
   });
 });
+
+describe('decideConsent — delivery marks refuse at send (TOT-207, P49 §5, v0.2.1)', () => {
+  const STATUSES = ['opted_in', 'attested', 'unknown'] as const;
+
+  it.each([
+    ['invalid', { invalid: true }],
+    ['landline', { landline: true }],
+    ['unreachable_suspended', { unreachableSuspended: true, unreachableCount: 3 }],
+  ] as const)('%s refuses every status and every category, safety included', (reason, evidence) => {
+    for (const status of STATUSES) {
+      for (const category of CATEGORIES) {
+        expect(decideConsent({ status, evidence }, category, { confirmedBookingExists: true })).toEqual({
+          allow: false,
+          reason,
+          effectiveStatus: status,
+          forceFooter: true,
+        });
+      }
+    }
+  });
+
+  it('opted_out wins over a mark; invalid > landline > unreachable_suspended', () => {
+    expect(decideConsent({ status: 'opted_out', evidence: { invalid: true } }, 'safety').reason).toBe('opted_out');
+    expect(decideConsent({ status: 'attested', evidence: { invalid: true, landline: true, unreachableSuspended: true } }, 'safety').reason).toBe('invalid');
+    expect(decideConsent({ status: 'attested', evidence: { landline: true, unreachableSuspended: true } }, 'safety').reason).toBe('landline');
+  });
+
+  it('only the boolean marks refuse: a counter below (or even at) the threshold without the mark, a lifted suspension, other evidence → send', () => {
+    for (const evidence of [
+      { unreachableCount: 2 },
+      { unreachableCount: 3 },
+      { unreachableCount: 0, unreachableSuspended: false, unreachableLiftedAt: new Date() },
+      { invalid: false, landline: false },
+      { note: 'x', lastTwilioErrorCode: 30007 },
+      {},
+      undefined,
+    ]) {
+      expect(decideConsent({ status: 'attested', evidence }, 'transactional').allow).toBe(true);
+    }
+    expect(decideConsent({ status: 'attested', evidence: { invalid: 'true' as unknown as boolean } }, 'transactional').allow).toBe(true);
+  });
+
+  it('no consent record → no mark → the TOT-193 table applies unchanged', () => {
+    expect(decideConsent(null, 'safety')).toEqual({ allow: true, effectiveStatus: 'unknown', forceFooter: true });
+  });
+});

@@ -25,6 +25,7 @@ exports.isPermanentTwilioError = isPermanentTwilioError;
 exports.redactPhoneNumbers = redactPhoneNumbers;
 exports.describeTwilioError = describeTwilioError;
 exports.consentEvidencePatch = consentEvidencePatch;
+exports.unreachableLiftPatch = unreachableLiftPatch;
 /** The TOT-207 table, code by code. Anything absent is `log_only`. */
 exports.TWILIO_ERROR_ACTIONS = Object.freeze({
     30034: 'alert_fatal',
@@ -112,11 +113,11 @@ function describeTwilioError(err) {
     const code = parseTwilioErrorCode(anyErr.code);
     const status = typeof anyErr.status === 'number' ? anyErr.status : undefined;
     const moreInfo = typeof anyErr.moreInfo === 'string' ? anyErr.moreInfo : undefined;
-    const message = typeof anyErr.message === 'string'
+    const message = redactPhoneNumbers(typeof anyErr.message === 'string'
         ? anyErr.message
         : err instanceof Error
             ? err.message
-            : String(err);
+            : String(err));
     const classification = classifyTwilioError(code);
     return {
         code,
@@ -156,5 +157,14 @@ function consentEvidencePatch(action, current, error) {
     if (action === 'mark_invalid')
         return { invalid: true, ...stamp };
     return null;
+}
+/**
+ * P49 §5 — what lifts `unreachable_suspended`: ANY inbound SMS from the number
+ * (proof it is reachable) or the admin "retry" action. `invalid` and
+ * `landline` are never lifted (a corrected number is another document).
+ * Merge this into `sms_consent.evidence` of every consent document of the number.
+ */
+function unreachableLiftPatch(at) {
+    return { unreachableCount: 0, unreachableSuspended: false, unreachableLiftedAt: at };
 }
 //# sourceMappingURL=errors.js.map

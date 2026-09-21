@@ -14,6 +14,13 @@ exports.decideConsent = decideConsent;
  *
  * `attested` is never promoted to `opted_in` here — only a recipient action
  * does that (TOT-193).
+ *
+ * Delivery marks (TOT-207, P49 §5), checked right after `opted_out` and for
+ * EVERY status and category — "never try again" is about the line, not about
+ * consent: `evidence.invalid` → `invalid`, `evidence.landline` → `landline`,
+ * `evidence.unreachableSuspended` → `unreachable_suspended`. Only the boolean
+ * marks are read (written by `consentEvidencePatch`, the suspension lifted
+ * with `unreachableLiftPatch`), never the raw counter.
  */
 function decideConsent(consent, category, ctx = {}) {
     const status = consent?.status ?? 'unknown';
@@ -24,6 +31,17 @@ function decideConsent(consent, category, ctx = {}) {
             effectiveStatus: status,
             forceFooter: true,
         };
+    }
+    const marks = consent?.evidence;
+    const marked = marks?.invalid === true
+        ? 'invalid'
+        : marks?.landline === true
+            ? 'landline'
+            : marks?.unreachableSuspended === true
+                ? 'unreachable_suspended'
+                : undefined;
+    if (marked) {
+        return { allow: false, reason: marked, effectiveStatus: status, forceFooter: true };
     }
     if (status === 'opted_in') {
         return { allow: true, effectiveStatus: status, forceFooter: false };

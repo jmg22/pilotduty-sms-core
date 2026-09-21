@@ -178,7 +178,7 @@ function generateId(prefix: string): string {
  *
  *  1. normalizePhone            → suppressed/invalid_phone
  *  2. sms_opt_outs              → suppressed/opted_out            (TOT-198)
- *  3. consent table             → suppressed/reminder_without_booking (TOT-193)
+ *  3. consent table + delivery marks → suppressed/reminder_without_booking|invalid|landline|unreachable_suspended (TOT-193, TOT-207)
  *  4. quiet hours (reminder)    → deferred/quiet_hours            (TOT-204)
  *  5. rate limits, org cap, then global daily slot → suppressed/rate_limited|org_cap|global_cap (TOT-209)
  *  6. compose + STOP footer + segments                             (TOT-199, TOT-240)
@@ -283,7 +283,8 @@ export function createSmsGateway(deps: SmsGatewayDeps): SmsGateway {
     if (input.idempotencyKey && deps.store.hasIdempotencyKey) {
       const seen = await deps.store.hasIdempotencyKey(input.idempotencyKey);
       if (seen) {
-        logger.info('sms duplicate skipped', { idempotencyKey: input.idempotencyKey });
+        // Callers build keys from the recipient (`onboarding:{pilot}:{to}`).
+        logger.info('sms duplicate skipped', { idempotencyKey: redactPhoneNumbers(input.idempotencyKey) });
         return {
           status: 'suppressed',
           reason: 'duplicate',
@@ -317,8 +318,10 @@ export function createSmsGateway(deps: SmsGatewayDeps): SmsGateway {
       confirmedBookingExists: input.confirmedBookingExists,
     });
     if (!decision.allow) {
-      return suppress(input, e164, decision.reason ?? 'opted_out', {
-        detail: `consent=${decision.effectiveStatus}`,
+      const reason = decision.reason ?? 'opted_out';
+      const byMark = reason === 'invalid' || reason === 'landline' || reason === 'unreachable_suspended';
+      return suppress(input, e164, reason, {
+        detail: byMark ? `evidence.${reason}` : `consent=${decision.effectiveStatus}`,
       });
     }
 
@@ -495,7 +498,8 @@ export function createSmsGateway(deps: SmsGatewayDeps): SmsGateway {
         severity: info.severity,
         errorClass: info.class,
         moreInfo: info.moreInfo,
-        message: redactPhoneNumbers(info.message),
+        // Redacted at the source by describeTwilioError — no raw Twilio text anywhere.
+        message: info.message,
       };
       if (info.action === 'alert_fatal') {
         logger.error('twilio 30034: sender not registered for A2P', logCtx);

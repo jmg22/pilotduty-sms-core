@@ -12,7 +12,7 @@ TypeScript strict, no framework, no runtime import of `twilio` or
 ## Install (pinned git tag)
 
 ```json
-"@pilotduty/sms-core": "git+https://github.com/jmg22/pilotduty-sms-core.git#v0.2.0"
+"@pilotduty/sms-core": "git+https://github.com/jmg22/pilotduty-sms-core.git#v0.2.1"
 ```
 
 Always `git+https` in `package.json` AND in the lock (`resolved`), never
@@ -55,7 +55,7 @@ const result = await gateway.send({
 
 switch (result.status) {
   case 'sent':       // handed to Twilio — result.sid, result.footerApplied
-  case 'suppressed': // result.reason: invalid_phone | opted_out | reminder_without_booking | rate_limited | org_cap | global_cap | duplicate
+  case 'suppressed': // result.reason: invalid_phone | opted_out | reminder_without_booking | invalid | landline | unreachable_suspended | rate_limited | org_cap | global_cap | duplicate
   case 'deferred':   // quiet hours — re-submit at result.deferUntil
   case 'failed':     // Twilio rejected — result.errorCode, result.errorClass
 }
@@ -70,7 +70,7 @@ too (`normalizePhone`, `toE164`, `isSmsCapablePhone`) for forms.
 | - | ---- | --------------------- | ----- |
 | 1 | `normalizePhone` — valid **and SMS-capable** for its country | `suppressed / invalid_phone` | TOT-275, TOT-195 |
 | 2 | `sms_opt_outs/{e164}` exists | `suppressed / opted_out` | TOT-198 |
-| 3 | Consent table (`opted_in` / `attested` / `unknown` / `opted_out`) | `suppressed / opted_out` or `reminder_without_booking` | TOT-193 |
+| 3 | Consent table (`opted_in` / `attested` / `unknown` / `opted_out`) | `suppressed / opted_out`, `reminder_without_booking`, or a delivery mark: `invalid` / `landline` / `unreachable_suspended` | TOT-193, TOT-207 |
 | 4 | Quiet hours 21:00–08:00 recipient local, `reminder` only | `deferred / quiet_hours` + `deferUntil` | TOT-204 |
 | 5 | Injected rate limiter, then org monthly cap, then global daily slot (`reserveGlobalSlot`, `safety` exempt) | `suppressed / rate_limited`, `org_cap`, `global_cap` | TOT-209 |
 | 6 | Template → `{{params}}`; STOP footer on first contact in 30 days, on `safety`, or when consent ≠ `opted_in`; segments/encoding | — | TOT-199, TOT-240 |
@@ -146,6 +146,15 @@ callback (numbers and numeric strings; anything else is `log_only`).
 | 30006 | `mark_landline` | `warning` | `evidence.landline = true` |
 | 21211 / 21614 / 21408 | `mark_invalid` | `warning` | `evidence.invalid = true` |
 | other | `log_only` | `warning` | log `code` + `moreInfo` |
+
+**Marks refuse at send (v0.2.1)**: a consent document with `evidence.invalid`,
+`evidence.landline` or `evidence.unreachableSuspended` is `suppressed` with the
+reason `invalid` / `landline` / `unreachable_suspended` — every status, every
+category, before counters and Twilio. `unreachableLiftPatch(at)` lifts a
+suspension (any inbound SMS from the number, or the admin retry); `invalid` and
+`landline` are never lifted. **No raw Twilio text (v0.2.1)**: the message of
+`describeTwilioError` — hence `errorMessage` on the result and in
+`sms_messages` — is redacted at the source.
 
 `consentEvidencePatch(action, currentEvidence, { code, at })` gives the exact
 fields to merge into `sms_consent.evidence` of every consent document of the

@@ -150,6 +150,11 @@ export function redactPhoneNumbers(text: string): string {
 export interface TwilioErrorInfo extends TwilioErrorClassification {
   code?: number;
   status?: number;
+  /**
+   * ALREADY REDACTED (`redactPhoneNumbers`, v0.2.1): the raw Twilio text never
+   * leaves this function — not to a log, not to `FailedResult.errorMessage`,
+   * not to `sms_messages.errorMessage`.
+   */
   message: string;
   moreInfo?: string;
   class: TwilioErrorClass;
@@ -162,12 +167,13 @@ export function describeTwilioError(err: unknown): TwilioErrorInfo {
   const status = typeof anyErr.status === 'number' ? anyErr.status : undefined;
   const moreInfo =
     typeof anyErr.moreInfo === 'string' ? anyErr.moreInfo : undefined;
-  const message =
+  const message = redactPhoneNumbers(
     typeof anyErr.message === 'string'
       ? anyErr.message
       : err instanceof Error
         ? err.message
-        : String(err);
+        : String(err),
+  );
   const classification = classifyTwilioError(code);
   return {
     code,
@@ -183,6 +189,7 @@ export function describeTwilioError(err: unknown): TwilioErrorInfo {
 export interface TwilioErrorEvidence {
   unreachableCount?: number;
   unreachableSuspended?: boolean;
+  unreachableLiftedAt?: Date;
   landline?: boolean;
   invalid?: boolean;
   lastTwilioErrorCode?: number;
@@ -221,4 +228,18 @@ export function consentEvidencePatch(
   if (action === 'mark_landline') return { landline: true, ...stamp };
   if (action === 'mark_invalid') return { invalid: true, ...stamp };
   return null;
+}
+
+/**
+ * P49 §5 — what lifts `unreachable_suspended`: ANY inbound SMS from the number
+ * (proof it is reachable) or the admin "retry" action. `invalid` and
+ * `landline` are never lifted (a corrected number is another document).
+ * Merge this into `sms_consent.evidence` of every consent document of the number.
+ */
+export function unreachableLiftPatch(at: Date): {
+  unreachableCount: 0;
+  unreachableSuspended: false;
+  unreachableLiftedAt: Date;
+} {
+  return { unreachableCount: 0, unreachableSuspended: false, unreachableLiftedAt: at };
 }

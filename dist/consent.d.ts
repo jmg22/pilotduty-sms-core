@@ -1,5 +1,11 @@
 import type { Consent, ConsentStatus, SmsCategory } from './types';
-export type ConsentRefusalReason = 'opted_out' | 'reminder_without_booking';
+export type ConsentRefusalReason = 'opted_out' | 'reminder_without_booking'
+/** TOT-207 marks (P49 §5) — `evidence.invalid`, 21211 / 21614 / 21408. Never lifted. */
+ | 'invalid'
+/** `evidence.landline`, 30006. Never lifted. */
+ | 'landline'
+/** `evidence.unreachableSuspended`, three 30003 / 30005. Lifted by any inbound SMS or an admin retry. */
+ | 'unreachable_suspended';
 export interface ConsentDecision {
     allow: boolean;
     reason?: ConsentRefusalReason;
@@ -29,6 +35,13 @@ export interface ConsentContext {
  *
  * `attested` is never promoted to `opted_in` here — only a recipient action
  * does that (TOT-193).
+ *
+ * Delivery marks (TOT-207, P49 §5), checked right after `opted_out` and for
+ * EVERY status and category — "never try again" is about the line, not about
+ * consent: `evidence.invalid` → `invalid`, `evidence.landline` → `landline`,
+ * `evidence.unreachableSuspended` → `unreachable_suspended`. Only the boolean
+ * marks are read (written by `consentEvidencePatch`, the suspension lifted
+ * with `unreachableLiftPatch`), never the raw counter.
  */
-export declare function decideConsent(consent: Pick<Consent, 'status'> | null | undefined, category: SmsCategory, ctx?: ConsentContext): ConsentDecision;
+export declare function decideConsent(consent: (Pick<Consent, 'status'> & Partial<Pick<Consent, 'evidence'>>) | null | undefined, category: SmsCategory, ctx?: ConsentContext): ConsentDecision;
 //# sourceMappingURL=consent.d.ts.map
