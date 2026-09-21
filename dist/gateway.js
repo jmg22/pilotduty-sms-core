@@ -4,6 +4,7 @@ exports.MAX_BODY_LENGTH = void 0;
 exports.createSmsGateway = createSmsGateway;
 const consent_1 = require("./consent");
 const errors_1 = require("./errors");
+const global_cap_1 = require("./global-cap");
 const phone_1 = require("./phone");
 const quiet_hours_1 = require("./quiet-hours");
 const template_1 = require("./template");
@@ -21,9 +22,6 @@ function generateId(prefix) {
         : `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 12)}`;
     return `${prefix}_${uuid.replace(/-/g, '')}`;
 }
-function utcDay(date) {
-    return date.toISOString().slice(0, 10);
-}
 /**
  * Build the single SMS send path shared by the webapp, Functions and the iOS
  * relay. Pipeline (TOT-187), in order:
@@ -32,10 +30,10 @@ function utcDay(date) {
  *  2. sms_opt_outs              → suppressed/opted_out            (TOT-198)
  *  3. consent table             → suppressed/reminder_without_booking (TOT-193)
  *  4. quiet hours (reminder)    → deferred/quiet_hours            (TOT-204)
- *  5. rate limits, org + global caps → suppressed/rate_limited|org_cap|global_cap (TOT-209)
+ *  5. rate limits, org cap, then global daily slot → suppressed/rate_limited|org_cap|global_cap (TOT-209)
  *  6. compose + STOP footer + segments                             (TOT-199, TOT-240)
  *  7. messages.create({ messagingServiceSid, statusCallback, to, body })
- *  8. writeMessage; error classification, 21610 → writeOptOut      (TOT-205, TOT-207)
+ *  8. writeMessage; error classification (`errorAction`), 21610 → writeOptOut `twilio_21610` (TOT-205, TOT-207)
  *
  * Every refusal is written to `sms_messages` with `status = suppressed` so it
  * shows on the dashboard (TOT-210). A deferral writes nothing: the caller
@@ -188,30 +186,56 @@ function createSmsGateway(deps) {
                 });
             }
         }
-        const counters = await deps.store.incrementCounters(input.organizationId, utcDay(at));
+        const counters = await deps.store.incrementCounters(input.organizationId, (0, global_cap_1.utcDay)(at));
         if (counters.org > deps.caps.perOrgMonthly) {
             return suppress(input, e164, 'org_cap', {
                 detail: `${counters.org}/${deps.caps.perOrgMonthly}`,
             });
         }
-        if (counters.global > deps.caps.globalDaily && input.category !== 'safety') {
-            return suppress(input, e164, 'global_cap', {
-                detail: `${counters.global}/${deps.caps.globalDaily}`,
-            });
+        if (deps.reserveGlobalSlot) {
+            const slot = await deps.reserveGlobalSlot({ category: input.category, now: at });
+            if (slot.threshold === 'cap') {
+                logger.error('global daily SMS cap reached', {
+                    global: slot.count,
+                    cap: slot.cap,
+                    day: slot.day,
+                    category: input.category,
+                });
+            }
+            else if (slot.threshold === 'warn') {
+                logger.warn('global daily SMS cap at 80%', {
+                    global: slot.count,
+                    cap: slot.cap,
+                    day: slot.day,
+                });
+            }
+            if (!slot.allowed) {
+                return suppress(input, e164, 'global_cap', {
+                    detail: `${slot.count}/${slot.cap}`,
+                });
+            }
         }
-        const globalRatio = counters.global / deps.caps.globalDaily;
-        if (globalRatio >= 1) {
-            logger.error('global daily SMS cap reached', {
-                global: counters.global,
-                cap: deps.caps.globalDaily,
-                category: input.category,
-            });
-        }
-        else if (globalRatio >= 0.8) {
-            logger.warn('global daily SMS cap at 80%', {
-                global: counters.global,
-                cap: deps.caps.globalDaily,
-            });
+        else {
+            // v0.1 path: the store counts the day itself, no once-a-day marker.
+            if (counters.global > deps.caps.globalDaily && input.category !== 'safety') {
+                return suppress(input, e164, 'global_cap', {
+                    detail: `${counters.global}/${deps.caps.globalDaily}`,
+                });
+            }
+            const globalRatio = counters.global / deps.caps.globalDaily;
+            if (globalRatio >= 1) {
+                logger.error('global daily SMS cap reached', {
+                    global: counters.global,
+                    cap: deps.caps.globalDaily,
+                    category: input.category,
+                });
+            }
+            else if (globalRatio >= 0.8) {
+                logger.warn('global daily SMS cap at 80%', {
+                    global: counters.global,
+                    cap: deps.caps.globalDaily,
+                });
+            }
         }
         // 6. Composition, STOP footer, segments.
         const rawBody = await resolveBody(input);
@@ -270,22 +294,28 @@ function createSmsGateway(deps) {
                 errorCode: info.code,
                 errorMessage: info.message,
             });
-            if (info.class === 'opted_out') {
+            if (info.action === 'opt_out_retroactive') {
+                // P48: an unsubscription seen by the carrier is a STOP — the write
+                // legitimately triggers the STOP notices (pilot, organization admins).
                 await deps.store.writeOptOut(e164, {
                     keyword: String(info.code),
                     at,
-                    source: 'twilio_error',
+                    source: 'twilio_21610',
                 });
             }
+            // Always `code` and `moreInfo`, never the number (Twilio quotes it in
+            // some messages).
             const logCtx = {
                 organizationId: input.organizationId,
                 templateId: input.templateId,
                 code: info.code,
+                action: info.action,
+                severity: info.severity,
                 errorClass: info.class,
                 moreInfo: info.moreInfo,
-                message: info.message,
+                message: (0, errors_1.redactPhoneNumbers)(info.message),
             };
-            if (info.class === 'unregistered_sender') {
+            if (info.action === 'alert_fatal') {
                 logger.error('twilio 30034: sender not registered for A2P', logCtx);
             }
             else {
@@ -299,6 +329,9 @@ function createSmsGateway(deps) {
                 encoding: composed.encoding,
                 errorCode: info.code,
                 errorClass: info.class,
+                errorAction: info.action,
+                errorSeverity: info.severity,
+                retry: false,
                 errorMessage: info.message,
                 moreInfo: info.moreInfo,
             };

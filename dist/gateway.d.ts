@@ -1,5 +1,6 @@
 import { type ConsentContext } from './consent';
-import { type TwilioErrorClass } from './errors';
+import { type TwilioErrorAction, type TwilioErrorClass, type TwilioErrorSeverity } from './errors';
+import { type GlobalDailySlot } from './global-cap';
 import { type CountryCode, type E164, type InvalidPhone } from './phone';
 import { type QuietHoursWindow } from './quiet-hours';
 import { type TemplateResolver } from './template';
@@ -62,6 +63,12 @@ export interface FailedResult extends SendResultBase {
     messageId: string;
     errorCode?: number;
     errorClass: TwilioErrorClass;
+    /** TOT-207 — what the caller must do with this failure (`classifyTwilioError`). */
+    errorAction: TwilioErrorAction;
+    /** Sentry level for the caller's report. */
+    errorSeverity: TwilioErrorSeverity;
+    /** Always `false`: a Twilio refusal is never retried. */
+    retry: false;
     errorMessage: string;
     moreInfo?: string;
 }
@@ -81,6 +88,19 @@ export interface SmsGatewayDeps {
         perOrgMonthly: number;
         globalDaily: number;
     };
+    /**
+     * TOT-209 — reservation of the platform-wide daily quota, normally
+     * `(i) => reserveGlobalDailySlot(db, i)` wrapped by the caller to report
+     * `threshold` to Sentry. Called AFTER consent, rate limits and the
+     * per-organization monthly cap, BEFORE `messages.create()`. When provided
+     * it is the only global guard: `caps.globalDaily` and the `global` figure
+     * of `store.incrementCounters` are ignored (the store must then stop
+     * incrementing the global counter itself, or the day is counted twice).
+     */
+    reserveGlobalSlot?: (input: {
+        category: SmsCategory;
+        now: Date;
+    }) => Promise<GlobalDailySlot>;
     now?: () => Date;
     /** Template catalogue. Required unless every `send()` passes `body`. */
     templates?: TemplateResolver;
@@ -105,10 +125,10 @@ export interface SmsGateway {
  *  2. sms_opt_outs              → suppressed/opted_out            (TOT-198)
  *  3. consent table             → suppressed/reminder_without_booking (TOT-193)
  *  4. quiet hours (reminder)    → deferred/quiet_hours            (TOT-204)
- *  5. rate limits, org + global caps → suppressed/rate_limited|org_cap|global_cap (TOT-209)
+ *  5. rate limits, org cap, then global daily slot → suppressed/rate_limited|org_cap|global_cap (TOT-209)
  *  6. compose + STOP footer + segments                             (TOT-199, TOT-240)
  *  7. messages.create({ messagingServiceSid, statusCallback, to, body })
- *  8. writeMessage; error classification, 21610 → writeOptOut      (TOT-205, TOT-207)
+ *  8. writeMessage; error classification (`errorAction`), 21610 → writeOptOut `twilio_21610` (TOT-205, TOT-207)
  *
  * Every refusal is written to `sms_messages` with `status = suppressed` so it
  * shows on the dashboard (TOT-210). A deferral writes nothing: the caller

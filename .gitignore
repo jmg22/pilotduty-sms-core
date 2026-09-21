@@ -4,3 +4,5 @@ coverage/
 .DS_Store
 # dist/ IS committed: consumers install this package as a pinned git tag
 # (github:jmg22/pilotduty-sms-core#vX.Y.Z) and must not need to build it.
+# Emulator runs (npm run test:emulator)
+*-debug.log

@@ -1,6 +1,6 @@
 {
   "name": "@pilotduty/sms-core",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "PilotDuty — shared SMS send pipeline (phone normalization, suppression, consent, quiet hours, caps, composition, Twilio send, message log). Consumed by PilotDutySaas, PilotDutyFunctions and the iOS relay.",
   "private": true,
   "license": "UNLICENSED",
@@ -18,6 +18,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:emulator": "firebase emulators:exec --only firestore --project demo-sms-core \"vitest run test/emulator\"",
     "release:check": "npm run build && npm test && git diff --exit-code -- dist"
   },
   "dependencies": {
