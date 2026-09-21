@@ -26,8 +26,16 @@ export interface ConsentEvidence {
   userAgent?: string;
   bookingId?: string;
   note?: string;
-  /** TOT-207 — bumped on 30003/30005, number suspended after 3. */
+  /** TOT-207 — bumped on 30003/30005, number suspended after 3 (`consentEvidencePatch`). */
   unreachableCount?: number;
+  /** TOT-207 — `unreachableCount` reached `UNREACHABLE_SUSPEND_AFTER`. */
+  unreachableSuspended?: boolean;
+  /** TOT-207 — 30006: landline, never try again. */
+  landline?: boolean;
+  /** TOT-207 — 21211 / 21614 / 21408: invalid number or region, never try again. */
+  invalid?: boolean;
+  lastTwilioErrorCode?: number;
+  lastTwilioErrorAt?: Date;
 }
 
 /** `sms_consent/{e164}_{organizationId}` */
@@ -46,7 +54,12 @@ export interface Consent {
   updatedAt?: Date;
 }
 
-export type OptOutSource = 'inbound_keyword' | 'twilio_error';
+/**
+ * `twilio_21610` — retroactive opt-out on Twilio error 21610 (P48).
+ * `twilio_error` is what v0.1 wrote for the same case; kept for the
+ * documents already in `sms_opt_outs`.
+ */
+export type OptOutSource = 'inbound_keyword' | 'twilio_21610' | 'twilio_error';
 
 /** `sms_opt_outs/{e164}` */
 export interface OptOut {
@@ -111,7 +124,9 @@ export interface SmsMessageRecord {
  *                `day` (existing `org_sms_counters/{orgId}_{YYYY-MM}`), after
  *                this increment;
  *   - `global` = the platform-wide count for `day` (`sms_counters/global_{day}`),
- *                after this increment.
+ *                after this increment. IGNORED when the gateway is given
+ *                `reserveGlobalSlot` (v0.2.0, TOT-209): the store must then
+ *                increment the organization counter only and may return 0.
  * The gateway increments BEFORE `messages.create()` (reservation): an attempt
  * that Twilio then rejects still consumes one unit. That is an economic
  * guard, not a security gate (see monthly-cap.ts in PilotDutySaas).

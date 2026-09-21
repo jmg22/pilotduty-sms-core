@@ -12,8 +12,11 @@ TypeScript strict, no framework, no runtime import of `twilio` or
 ## Install (pinned git tag)
 
 ```json
-"@pilotduty/sms-core": "github:jmg22/pilotduty-sms-core#v0.1.0"
+"@pilotduty/sms-core": "git+https://github.com/jmg22/pilotduty-sms-core.git#v0.2.0"
 ```
+
+Always `git+https` in `package.json` AND in the lock (`resolved`), never
+`git+ssh` — npm rewrites it on `npm install`; check with `grep git+ssh`.
 
 `dist/` is committed, so consumers never build this package. Node ≥ 20.
 The only runtime dependency is `libphonenumber-js` (max metadata, for line
@@ -69,7 +72,7 @@ too (`normalizePhone`, `toE164`, `isSmsCapablePhone`) for forms.
 | 2 | `sms_opt_outs/{e164}` exists | `suppressed / opted_out` | TOT-198 |
 | 3 | Consent table (`opted_in` / `attested` / `unknown` / `opted_out`) | `suppressed / opted_out` or `reminder_without_booking` | TOT-193 |
 | 4 | Quiet hours 21:00–08:00 recipient local, `reminder` only | `deferred / quiet_hours` + `deferUntil` | TOT-204 |
-| 5 | Injected rate limiter, then org monthly cap and global daily cap (`safety` exempt from global) | `suppressed / rate_limited`, `org_cap`, `global_cap` | TOT-209 |
+| 5 | Injected rate limiter, then org monthly cap, then global daily slot (`reserveGlobalSlot`, `safety` exempt) | `suppressed / rate_limited`, `org_cap`, `global_cap` | TOT-209 |
 | 6 | Template → `{{params}}`; STOP footer on first contact in 30 days, on `safety`, or when consent ≠ `opted_in`; segments/encoding | — | TOT-199, TOT-240 |
 | 7 | `messages.create({ messagingServiceSid, statusCallback, to, body })` | — | TOT-186 |
 | 8 | `writeMessage` (`status = queued`, Twilio sid); on error: classify, record `failed`, **21610 → `writeOptOut`** | `failed` | TOT-205, TOT-207 |
@@ -96,6 +99,61 @@ See `SmsStore` in `src/types.ts` (Firestore collections `sms_consent`,
 platform's **daily** count after incrementing; it runs **before**
 `messages.create()` (reservation).
 
+### Global daily cap (v0.2.0, TOT-209)
+
+```ts
+import { createSmsGateway, reserveGlobalDailySlot } from '@pilotduty/sms-core';
+
+const gateway = createSmsGateway({
+  // …
+  reserveGlobalSlot: async (input) => {
+    const slot = await reserveGlobalDailySlot(admin.firestore(), input);
+    if (slot.threshold === 'warn') Sentry.captureMessage('sms global cap 80 %', 'warning');
+    if (slot.threshold === 'cap') Sentry.captureMessage('sms global cap reached', 'error');
+    return slot;
+  },
+});
+```
+
+`reserveGlobalDailySlot(db, { category, now, cap? })` →
+`{ allowed, count, cap, day, threshold? }`. One Firestore transaction on
+`sms_counters/global_{YYYY-MM-DD}` (**UTC** day, `timezone: 'UTC'` in the
+document): atomic increment, refusal beyond `SMS_GLOBAL_DAILY_CAP` (default
+3000 — the one canonical name, no alias) **except**
+`category === 'safety'`, which is counted and never refused. `threshold` is
+`'warn'` at 80 % and `'cap'` at 100 %, returned **once per day and per
+threshold** (marker `thresholds.warn` / `thresholds.cap` written in the same
+transaction). `db` is structural — `firebase-admin`'s Firestore fits as is.
+
+The gateway calls `reserveGlobalSlot` **after** consent, rate limits and the
+org monthly cap, **before** `messages.create()`; a refusal is recorded as
+`suppressed / global_cap`. When it is provided, `caps.globalDaily` and the
+`global` figure of `incrementCounters` are ignored — the store must stop
+incrementing `sms_counters` itself. Without it the v0.1 behaviour is kept.
+
+### Twilio error codes (v0.2.0, TOT-207)
+
+`classifyTwilioError(code)` → `{ action, severity, retry: false }`, for the
+API error of `messages.create()` **and** the `ErrorCode` of the status
+callback (numbers and numeric strings; anything else is `log_only`).
+
+| Code | `action` | `severity` | Effect at the caller |
+| -- | -- | -- | -- |
+| 30034 | `alert_fatal` | `fatal` | Sentry `fatal`, immediately |
+| 21610 | `opt_out_retroactive` | `info` | `sms_opt_outs/{e164}`, `source: 'twilio_21610'` (the gateway writes it on the API error) |
+| 30003 / 30005 | `unreachable_increment` | `warning` | `evidence.unreachableCount++`, `unreachableSuspended` at 3 |
+| 30007 | `carrier_filtered` | `warning` | reputation counter, alert above 2 % / 24 h (status callback) |
+| 30006 | `mark_landline` | `warning` | `evidence.landline = true` |
+| 21211 / 21614 / 21408 | `mark_invalid` | `warning` | `evidence.invalid = true` |
+| other | `log_only` | `warning` | log `code` + `moreInfo` |
+
+`consentEvidencePatch(action, currentEvidence, { code, at })` gives the exact
+fields to merge into `sms_consent.evidence` of every consent document of the
+number (or `null`), so both consumers write the same thing. A failed send
+carries `errorAction`, `errorSeverity` and `retry: false` next to the v0.1
+`errorClass`. `redactPhoneNumbers(text)` masks the numbers Twilio quotes in
+its messages — logs never carry a phone number.
+
 ## Also exported
 
 - `classifyInboundKeyword(body)` — STOP/ARRET/…, START/UNSTOP/OUI/YES,
@@ -105,13 +163,15 @@ platform's **daily** count after incrementing; it runs **before**
   PilotDutySaas `sms-segments.ts`, TOT-240).
 - `decideConsent`, `decideFooter`, `applyFooter`, `renderTemplate`,
   `isWithinQuietHours`, `nextQuietHoursEnd`, `classifyTwilioError`,
-  `describeTwilioError`.
+  `describeTwilioError`, `consentEvidencePatch`, `redactPhoneNumbers`,
+  `reserveGlobalDailySlot`, `resolveGlobalDailyCap`.
 
 ## Development
 
 ```
 npm install
 npm test            # vitest
+npm run test:emulator   # Firestore emulator (firebase CLI + Java): real transactions for the global cap
 npm run typecheck
 npm run build       # emits dist/ (commit it)
 npm run release:check   # build + test + dist must be committed

@@ -44,11 +44,38 @@ export {
 } from './quiet-hours';
 export {
   classifyTwilioError,
+  parseTwilioErrorCode,
   describeTwilioError,
   isPermanentTwilioError,
+  twilioErrorClassOf,
+  consentEvidencePatch,
+  redactPhoneNumbers,
+  TWILIO_ERROR_ACTIONS,
+  TWILIO_ERROR_SEVERITIES,
+  UNREACHABLE_SUSPEND_AFTER,
+  type TwilioErrorAction,
+  type TwilioErrorSeverity,
+  type TwilioErrorClassification,
   type TwilioErrorClass,
   type TwilioErrorInfo,
+  type TwilioErrorEvidence,
 } from './errors';
+export {
+  reserveGlobalDailySlot,
+  resolveGlobalDailyCap,
+  globalCounterDocPath,
+  utcDay,
+  DEFAULT_GLOBAL_DAILY_CAP,
+  GLOBAL_DAILY_CAP_ENV,
+  GLOBAL_COUNTER_COLLECTION,
+  GLOBAL_CAP_WARN_PERCENT,
+  type GlobalDailySlot,
+  type GlobalCapThreshold,
+  type ReserveGlobalDailySlotInput,
+  type GlobalCounterDbLike,
+  type GlobalCounterTransactionLike,
+  type GlobalCounterSnapshotLike,
+} from './global-cap';
 export {
   renderTemplate,
   decideFooter,

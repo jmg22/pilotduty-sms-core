@@ -1,7 +1,9 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { createSmsGateway, type SendInput, type SmsGateway } from '../src/gateway';
+import { reserveGlobalDailySlot } from '../src/global-cap';
 import { STOP_FOOTERS } from '../src/template';
 import { FakeTwilio, MemoryStore, silentLogger, twilioError } from './helpers';
+import { MemoryDb } from './memory-db';
 
 const NOW = new Date('2026-09-14T15:00:00Z'); // 11:00 EDT
 const ORG = 'orgA';
@@ -186,6 +188,69 @@ describe('createSmsGateway — pipeline (TOT-187)', () => {
       expect((await g.send(baseInput({ organizationId: 'o3', category: 'safety' }))).status).toBe('sent');
       expect(logs.entries.some((e) => e.level === 'error' && e.msg.includes('global daily SMS cap reached'))).toBe(true);
     });
+
+    describe('reserveGlobalSlot (v0.2.0, TOT-209)', () => {
+      function withSlot(cap: number, perOrgMonthly = 100) {
+        const db = new MemoryDb();
+        const order: string[] = [];
+        const tw = new FakeTwilio();
+        const create = tw.messages.create;
+        tw.messages.create = async (params) => {
+          order.push('twilio');
+          return create(params);
+        };
+        const g = createSmsGateway({
+          twilio: tw, store, messagingServiceSid: 'MG', statusCallbackUrl: 'cb',
+          // globalDaily deliberately absurd: it must be ignored once reserveGlobalSlot is given.
+          caps: { perOrgMonthly, globalDaily: 1 }, now: () => NOW, templates: () => 'body', logger: logs.logger,
+          reserveGlobalSlot: async (i) => {
+            order.push(`reserve:${i.category}`);
+            return reserveGlobalDailySlot(db, { ...i, cap });
+          },
+        });
+        return { g, db, tw, order };
+      }
+      const counter = (db: MemoryDb) => db.docs.get('sms_counters/global_2026-09-14')?.count;
+
+      it('reserves after the org cap and before messages.create, with the send time', async () => {
+        const { g, db, order } = withSlot(10);
+        expect((await g.send(baseInput())).status).toBe('sent');
+        expect(order).toEqual(['reserve:transactional', 'twilio']);
+        expect(counter(db)).toBe(1);
+      });
+
+      it('over the cap → suppressed global_cap, recorded, Twilio not called; safety still goes out and is counted', async () => {
+        const { g, db, tw } = withSlot(2);
+        expect((await g.send(baseInput({ organizationId: 'o1' }))).status).toBe('sent');
+        expect((await g.send(baseInput({ organizationId: 'o2' }))).status).toBe('sent');
+        const refused = await g.send(baseInput({ organizationId: 'o3' }));
+        expect(refused).toMatchObject({ status: 'suppressed', reason: 'global_cap', detail: '2/2' });
+        expect(store.messages.at(-1)).toMatchObject({ status: 'suppressed', suppressReason: 'global_cap' });
+        expect(tw.calls).toHaveLength(2);
+        expect((await g.send(baseInput({ organizationId: 'o3', category: 'safety' }))).status).toBe('sent');
+        expect(counter(db)).toBe(3);
+        expect(logs.entries.filter((e) => e.msg === 'global daily SMS cap reached')).toHaveLength(1);
+      });
+
+      it('no slot is consumed by a send refused earlier (opt-out, consent, rate limit, org cap)', async () => {
+        const { g, db } = withSlot(10, 1);
+        store.optOuts.set('+15142905402', { keyword: 'STOP', at: NOW, source: 'inbound_keyword' });
+        expect(await g.send(baseInput())).toMatchObject({ reason: 'opted_out' });
+        store.optOuts.clear();
+        expect(await g.send(baseInput({ category: 'reminder' }))).toMatchObject({ reason: 'reminder_without_booking' });
+        expect(counter(db)).toBeUndefined();
+        expect((await g.send(baseInput())).status).toBe('sent');
+        expect(await g.send(baseInput())).toMatchObject({ reason: 'org_cap' });
+        expect(counter(db)).toBe(1);
+      });
+
+      it('a reservation that Twilio then rejects stays consumed', async () => {
+        const { g, db, tw } = withSlot(10);
+        tw.nextError = twilioError(30003);
+        expect((await g.send(baseInput())).status).toBe('failed');
+        expect(counter(db)).toBe(1);
+      });
+    });
   });
 
   describe('step 6 — composition and footer (TOT-199, TOT-240)', () => {
@@ -256,8 +321,8 @@ describe('createSmsGateway — pipeline (TOT-187)', () => {
     it('21610 → failed, retroactive opt-out written, next send suppressed without Twilio', async () => {
       twilio.nextError = twilioError(21610, 'unsubscribed recipient');
       const r = await gateway.send(baseInput());
-      expect(r).toMatchObject({ status: 'failed', errorCode: 21610, errorClass: 'opted_out' });
-      expect(store.optOuts.get('+15142905402')).toMatchObject({ keyword: '21610', source: 'twilio_error', at: NOW });
+      expect(r).toMatchObject({ status: 'failed', errorCode: 21610, errorClass: 'opted_out', errorAction: 'opt_out_retroactive', errorSeverity: 'info', retry: false });
+      expect(store.optOuts.get('+15142905402')).toMatchObject({ keyword: '21610', source: 'twilio_21610', at: NOW });
       expect(store.messages[0]).toMatchObject({ status: 'failed', errorCode: 21610 });
       const again = await gateway.send(baseInput());
       expect(again).toMatchObject({ status: 'suppressed', reason: 'opted_out' });
@@ -267,7 +332,7 @@ describe('createSmsGateway — pipeline (TOT-187)', () => {
     it('21408 → failed/invalid_number with code and moreInfo recorded, no opt-out', async () => {
       twilio.nextError = twilioError(21408);
       const r = await gateway.send(baseInput());
-      expect(r).toMatchObject({ status: 'failed', errorCode: 21408, errorClass: 'invalid_number' });
+      expect(r).toMatchObject({ status: 'failed', errorCode: 21408, errorClass: 'invalid_number', errorAction: 'mark_invalid', retry: false });
       if (r.status === 'failed') expect(r.moreInfo).toContain('21408');
       expect(store.optOuts.size).toBe(0);
       expect(logs.entries.find((e) => e.msg === 'twilio send failed')?.ctx).toMatchObject({ code: 21408, moreInfo: expect.stringContaining('21408') });
@@ -276,8 +341,16 @@ describe('createSmsGateway — pipeline (TOT-187)', () => {
     it('30034 is logged at error level', async () => {
       twilio.nextError = twilioError(30034);
       const r = await gateway.send(baseInput());
-      expect(r).toMatchObject({ status: 'failed', errorClass: 'unregistered_sender' });
+      expect(r).toMatchObject({ status: 'failed', errorClass: 'unregistered_sender', errorAction: 'alert_fatal', errorSeverity: 'fatal' });
       expect(logs.entries.some((e) => e.level === 'error' && e.msg.includes('30034'))).toBe(true);
+    });
+
+    it('never logs the number Twilio quotes in its message', async () => {
+      twilio.nextError = twilioError(21211, "The 'To' number +15142905402 is not a valid phone number");
+      const r = await gateway.send(baseInput());
+      expect(r).toMatchObject({ status: 'failed', errorAction: 'mark_invalid' });
+      expect(JSON.stringify(logs.entries)).not.toContain('5142905402');
+      expect(logs.entries.find((e) => e.msg === 'twilio send failed')?.ctx).toMatchObject({ code: 21211, action: 'mark_invalid', severity: 'warning' });
     });
 
     it('never throws on a non-Twilio rejection', async () => {
