@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.GLOBAL_CAP_WARN_PERCENT = exports.GLOBAL_COUNTER_COLLECTION = exports.LEGACY_GLOBAL_DAILY_CAP_ENV = exports.GLOBAL_DAILY_CAP_ENV = exports.DEFAULT_GLOBAL_DAILY_CAP = void 0;
+exports.GLOBAL_CAP_WARN_PERCENT = exports.GLOBAL_COUNTER_COLLECTION = exports.GLOBAL_DAILY_CAP_ENV = exports.DEFAULT_GLOBAL_DAILY_CAP = void 0;
 exports.utcDay = utcDay;
 exports.globalCounterDocPath = globalCounterDocPath;
 exports.resolveGlobalDailyCap = resolveGlobalDailyCap;
@@ -19,10 +19,11 @@ exports.reserveGlobalDailySlot = reserveGlobalDailySlot;
  * `firebase-admin` Firestore satisfies it as is.
  */
 exports.DEFAULT_GLOBAL_DAILY_CAP = 3000;
-/** Set by JMG (Vercel + Functions `.env`), never by an agent. */
-exports.GLOBAL_DAILY_CAP_ENV = 'SMS_DAILY_CAP_GLOBAL';
-/** Name read by sms-core ≤ v0.1.1 consumers (P21) — still honoured as a fallback. */
-exports.LEGACY_GLOBAL_DAILY_CAP_ENV = 'SMS_GLOBAL_DAILY_CAP';
+/**
+ * The one canonical name (P21, P49) — the same variable the webapp and
+ * Functions already read. Set by JMG (Vercel + Functions `.env`), never by an agent.
+ */
+exports.GLOBAL_DAILY_CAP_ENV = 'SMS_GLOBAL_DAILY_CAP';
 exports.GLOBAL_COUNTER_COLLECTION = 'sms_counters';
 /** `warn` fires when the count reaches 80 % of the cap. */
 exports.GLOBAL_CAP_WARN_PERCENT = 80;
@@ -45,13 +46,11 @@ function parseCap(raw) {
     }
     return undefined;
 }
-/** `SMS_DAILY_CAP_GLOBAL`, else the legacy `SMS_GLOBAL_DAILY_CAP`, else 3000. Invalid values are ignored. */
+/** `SMS_GLOBAL_DAILY_CAP`, else 3000. An invalid value is ignored. */
 function resolveGlobalDailyCap(env = typeof process !== 'undefined'
     ? process.env
     : {}) {
-    return (parseCap(env[exports.GLOBAL_DAILY_CAP_ENV]) ??
-        parseCap(env[exports.LEGACY_GLOBAL_DAILY_CAP_ENV]) ??
-        exports.DEFAULT_GLOBAL_DAILY_CAP);
+    return parseCap(env[exports.GLOBAL_DAILY_CAP_ENV]) ?? exports.DEFAULT_GLOBAL_DAILY_CAP;
 }
 function reachesWarn(count, cap) {
     return count * 100 >= cap * exports.GLOBAL_CAP_WARN_PERCENT;

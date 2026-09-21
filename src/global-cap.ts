@@ -15,10 +15,11 @@ import type { SmsCategory } from './types';
  */
 
 export const DEFAULT_GLOBAL_DAILY_CAP = 3000;
-/** Set by JMG (Vercel + Functions `.env`), never by an agent. */
-export const GLOBAL_DAILY_CAP_ENV = 'SMS_DAILY_CAP_GLOBAL';
-/** Name read by sms-core ≤ v0.1.1 consumers (P21) — still honoured as a fallback. */
-export const LEGACY_GLOBAL_DAILY_CAP_ENV = 'SMS_GLOBAL_DAILY_CAP';
+/**
+ * The one canonical name (P21, P49) — the same variable the webapp and
+ * Functions already read. Set by JMG (Vercel + Functions `.env`), never by an agent.
+ */
+export const GLOBAL_DAILY_CAP_ENV = 'SMS_GLOBAL_DAILY_CAP';
 export const GLOBAL_COUNTER_COLLECTION = 'sms_counters';
 /** `warn` fires when the count reaches 80 % of the cap. */
 export const GLOBAL_CAP_WARN_PERCENT = 80;
@@ -89,17 +90,13 @@ function parseCap(raw: unknown): number | undefined {
   return undefined;
 }
 
-/** `SMS_DAILY_CAP_GLOBAL`, else the legacy `SMS_GLOBAL_DAILY_CAP`, else 3000. Invalid values are ignored. */
+/** `SMS_GLOBAL_DAILY_CAP`, else 3000. An invalid value is ignored. */
 export function resolveGlobalDailyCap(
   env: Record<string, string | undefined> = typeof process !== 'undefined'
     ? process.env
     : {},
 ): number {
-  return (
-    parseCap(env[GLOBAL_DAILY_CAP_ENV]) ??
-    parseCap(env[LEGACY_GLOBAL_DAILY_CAP_ENV]) ??
-    DEFAULT_GLOBAL_DAILY_CAP
-  );
+  return parseCap(env[GLOBAL_DAILY_CAP_ENV]) ?? DEFAULT_GLOBAL_DAILY_CAP;
 }
 
 function reachesWarn(count: number, cap: number): boolean {

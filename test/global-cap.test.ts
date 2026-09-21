@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_GLOBAL_DAILY_CAP,
+  GLOBAL_DAILY_CAP_ENV,
   globalCounterDocPath,
   reserveGlobalDailySlot,
   resolveGlobalDailyCap,
@@ -152,30 +153,33 @@ describe('reserveGlobalDailySlot — TOT-209 (in-memory transactions)', () => {
 });
 
 describe('resolveGlobalDailyCap', () => {
-  it('SMS_DAILY_CAP_GLOBAL, then the legacy SMS_GLOBAL_DAILY_CAP, then 3000', () => {
+  it('SMS_GLOBAL_DAILY_CAP (the one canonical name, P21 / P49), then 3000', () => {
     expect(DEFAULT_GLOBAL_DAILY_CAP).toBe(3000);
+    expect(GLOBAL_DAILY_CAP_ENV).toBe('SMS_GLOBAL_DAILY_CAP');
     expect(resolveGlobalDailyCap({})).toBe(3000);
-    expect(resolveGlobalDailyCap({ SMS_DAILY_CAP_GLOBAL: '5000' })).toBe(5000);
     expect(resolveGlobalDailyCap({ SMS_GLOBAL_DAILY_CAP: '1200' })).toBe(1200);
-    expect(resolveGlobalDailyCap({ SMS_DAILY_CAP_GLOBAL: '5000', SMS_GLOBAL_DAILY_CAP: '1200' })).toBe(5000);
+  });
+
+  it('no alias: SMS_DAILY_CAP_GLOBAL is never read', () => {
+    expect(resolveGlobalDailyCap({ SMS_DAILY_CAP_GLOBAL: '5000' })).toBe(3000);
+    expect(resolveGlobalDailyCap({ SMS_DAILY_CAP_GLOBAL: '5000', SMS_GLOBAL_DAILY_CAP: '1200' })).toBe(1200);
   });
 
   it.each(['', 'abc', '0', '-5', '12.5', '1e3', ' '])('ignores the invalid value %j', (raw) => {
-    expect(resolveGlobalDailyCap({ SMS_DAILY_CAP_GLOBAL: raw })).toBe(3000);
-    expect(resolveGlobalDailyCap({ SMS_DAILY_CAP_GLOBAL: raw, SMS_GLOBAL_DAILY_CAP: '700' })).toBe(700);
+    expect(resolveGlobalDailyCap({ SMS_GLOBAL_DAILY_CAP: raw })).toBe(3000);
   });
 
   it('reads process.env by default, and an explicit cap wins', async () => {
-    const previous = process.env.SMS_DAILY_CAP_GLOBAL;
-    process.env.SMS_DAILY_CAP_GLOBAL = '2';
+    const previous = process.env.SMS_GLOBAL_DAILY_CAP;
+    process.env.SMS_GLOBAL_DAILY_CAP = '2';
     try {
       const db = new MemoryDb();
       expect(await reserveGlobalDailySlot(db, { category: 'transactional', now: NOW })).toMatchObject({ cap: 2, count: 1 });
       expect(await reserveGlobalDailySlot(db, { category: 'transactional', now: NOW, cap: 50 })).toMatchObject({ cap: 50, count: 2 });
       expect(await reserveGlobalDailySlot(db, { category: 'transactional', now: NOW })).toMatchObject({ allowed: false, cap: 2 });
     } finally {
-      if (previous === undefined) delete process.env.SMS_DAILY_CAP_GLOBAL;
-      else process.env.SMS_DAILY_CAP_GLOBAL = previous;
+      if (previous === undefined) delete process.env.SMS_GLOBAL_DAILY_CAP;
+      else process.env.SMS_GLOBAL_DAILY_CAP = previous;
     }
   });
 });

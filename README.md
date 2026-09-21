@@ -118,8 +118,8 @@ const gateway = createSmsGateway({
 `reserveGlobalDailySlot(db, { category, now, cap? })` →
 `{ allowed, count, cap, day, threshold? }`. One Firestore transaction on
 `sms_counters/global_{YYYY-MM-DD}` (**UTC** day, `timezone: 'UTC'` in the
-document): atomic increment, refusal beyond `SMS_DAILY_CAP_GLOBAL` (default
-3000; the legacy name `SMS_GLOBAL_DAILY_CAP` is still read) **except**
+document): atomic increment, refusal beyond `SMS_GLOBAL_DAILY_CAP` (default
+3000 — the one canonical name, no alias) **except**
 `category === 'safety'`, which is counted and never refused. `threshold` is
 `'warn'` at 80 % and `'cap'` at 100 %, returned **once per day and per
 threshold** (marker `thresholds.warn` / `thresholds.cap` written in the same

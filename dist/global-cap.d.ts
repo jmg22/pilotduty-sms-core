@@ -13,10 +13,11 @@ import type { SmsCategory } from './types';
  * `firebase-admin` Firestore satisfies it as is.
  */
 export declare const DEFAULT_GLOBAL_DAILY_CAP = 3000;
-/** Set by JMG (Vercel + Functions `.env`), never by an agent. */
-export declare const GLOBAL_DAILY_CAP_ENV = "SMS_DAILY_CAP_GLOBAL";
-/** Name read by sms-core ≤ v0.1.1 consumers (P21) — still honoured as a fallback. */
-export declare const LEGACY_GLOBAL_DAILY_CAP_ENV = "SMS_GLOBAL_DAILY_CAP";
+/**
+ * The one canonical name (P21, P49) — the same variable the webapp and
+ * Functions already read. Set by JMG (Vercel + Functions `.env`), never by an agent.
+ */
+export declare const GLOBAL_DAILY_CAP_ENV = "SMS_GLOBAL_DAILY_CAP";
 export declare const GLOBAL_COUNTER_COLLECTION = "sms_counters";
 /** `warn` fires when the count reaches 80 % of the cap. */
 export declare const GLOBAL_CAP_WARN_PERCENT = 80;
@@ -60,7 +61,7 @@ export interface GlobalDailySlot {
 }
 export declare function utcDay(date: Date): string;
 export declare function globalCounterDocPath(day: string): string;
-/** `SMS_DAILY_CAP_GLOBAL`, else the legacy `SMS_GLOBAL_DAILY_CAP`, else 3000. Invalid values are ignored. */
+/** `SMS_GLOBAL_DAILY_CAP`, else 3000. An invalid value is ignored. */
 export declare function resolveGlobalDailyCap(env?: Record<string, string | undefined>): number;
 /**
  * Atomically reserve one unit of the platform-wide daily quota.

@@ -2,12 +2,23 @@
 
 ## v0.2.0 — 2026-09-21
 
-Wave 4, lot 1 (decision P48): the Twilio error table (TOT-207) and the global
-daily cap (TOT-209) live here, one truth for the webapp and Functions. No new
-dependency.
+Wave 4, lot 1 (decisions P48 / P49): the Twilio error table (TOT-207) and the
+global daily cap (TOT-209) live here, one truth for the webapp and Functions.
+No new dependency.
 
-- **`classifyTwilioError(code)` now returns `{ action, severity, retry: false }`**
-  (BREAKING for direct callers — it returned the class string in v0.1).
+### Breaking
+
+- **`classifyTwilioError(code)` returns `{ action, severity, retry: false }`**
+  instead of the `TwilioErrorClass` string of v0.1. Migration: read `.action`,
+  or `twilioErrorClassOf(classifyTwilioError(code).action)` for the old
+  vocabulary. `describeTwilioError().class` and `FailedResult.errorClass` are
+  unchanged, so a consumer that only reads those (the webapp and Functions
+  today — no direct caller found) needs no change. Accepted by the pilot for a
+  0.x release (P49).
+
+### Added / changed
+
+- `classifyTwilioError` — the full TOT-207 table.
   Actions: `alert_fatal` (30034), `opt_out_retroactive` (21610),
   `unreachable_increment` (30003 / 30005, suspension at
   `UNREACHABLE_SUSPEND_AFTER = 3`), `carrier_filtered` (30007),
@@ -24,8 +35,8 @@ dependency.
 - **`reserveGlobalDailySlot(db, { category, now, cap? })`** →
   `{ allowed, count, cap, day, threshold? }`: Firestore transaction on
   `sms_counters/global_{YYYY-MM-DD}` (UTC day, labelled `timezone: 'UTC'`),
-  atomic increment, refusal beyond `SMS_DAILY_CAP_GLOBAL` (default 3000,
-  legacy `SMS_GLOBAL_DAILY_CAP` still read) except `category === 'safety'`
+  atomic increment, refusal beyond `SMS_GLOBAL_DAILY_CAP` (default 3000 — the
+  canonical name of P21, the only one read, no alias) except `category === 'safety'`
   (counted, never refused); `threshold` `'warn'` at 80 % / `'cap'` at 100 %,
   once per day and per threshold (markers `thresholds.warn|cap` in the
   document). `db` is structural (`GlobalCounterDbLike`), compatible with the
