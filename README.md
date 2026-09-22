@@ -12,7 +12,7 @@ TypeScript strict, no framework, no runtime import of `twilio` or
 ## Install (pinned git tag)
 
 ```json
-"@pilotduty/sms-core": "git+https://github.com/jmg22/pilotduty-sms-core.git#v0.2.1"
+"@pilotduty/sms-core": "git+https://github.com/jmg22/pilotduty-sms-core.git#v0.2.2"
 ```
 
 Always `git+https` in `package.json` AND in the lock (`resolved`), never
@@ -157,6 +157,12 @@ suspension (any inbound SMS from the number, or the admin retry); `invalid` and
 `landline` are never lifted. **No raw Twilio text (v0.2.1)**: the message of
 `describeTwilioError` — hence `errorMessage` on the result and in
 `sms_messages` — is redacted at the source.
+
+**Follower badge (v0.2.2)**: `projectDeliveryState(evidence)` →
+`{ state, at, code }` with `state` ∈ `invalid` > `landline` >
+`unreachable_suspended` > `unreachable` > `ok` — one definition shared by both
+repos, called when a mark is written or lifted; `isBlockingDeliveryState(state)`
+tells the three states that actually refuse a send.
 
 `consentEvidencePatch(action, currentEvidence, { code, at })` gives the exact
 fields to merge into `sms_consent.evidence` of every consent document of the

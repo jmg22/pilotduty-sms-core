@@ -26,6 +26,8 @@ exports.redactPhoneNumbers = redactPhoneNumbers;
 exports.describeTwilioError = describeTwilioError;
 exports.consentEvidencePatch = consentEvidencePatch;
 exports.unreachableLiftPatch = unreachableLiftPatch;
+exports.isBlockingDeliveryState = isBlockingDeliveryState;
+exports.projectDeliveryState = projectDeliveryState;
 /** The TOT-207 table, code by code. Anything absent is `log_only`. */
 exports.TWILIO_ERROR_ACTIONS = Object.freeze({
     30034: 'alert_fatal',
@@ -166,5 +168,29 @@ function consentEvidencePatch(action, current, error) {
  */
 function unreachableLiftPatch(at) {
     return { unreachableCount: 0, unreachableSuspended: false, unreachableLiftedAt: at };
+}
+/** États qui empêchent au moins une catégorie de partir — ceux qui méritent un badge. */
+function isBlockingDeliveryState(state) {
+    return state === 'invalid' || state === 'landline' || state === 'unreachable_suspended';
+}
+function projectDeliveryState(evidence) {
+    const count = Number(evidence?.unreachableCount);
+    const state = evidence?.invalid === true
+        ? 'invalid'
+        : evidence?.landline === true
+            ? 'landline'
+            : evidence?.unreachableSuspended === true
+                ? 'unreachable_suspended'
+                : Number.isFinite(count) && count > 0
+                    ? 'unreachable'
+                    : 'ok';
+    const at = evidence?.lastTwilioErrorAt;
+    const code = evidence?.lastTwilioErrorCode;
+    return {
+        state,
+        // `ok` ne porte ni date ni code : le badge disparaît complètement.
+        ...(state !== 'ok' && at instanceof Date ? { at } : {}),
+        ...(state !== 'ok' && typeof code === 'number' ? { code } : {}),
+    };
 }
 //# sourceMappingURL=errors.js.map

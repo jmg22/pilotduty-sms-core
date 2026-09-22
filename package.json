@@ -1,6 +1,6 @@
 {
   "name": "@pilotduty/sms-core",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "PilotDuty — shared SMS send pipeline (phone normalization, suppression, consent, quiet hours, caps, composition, Twilio send, message log). Consumed by PilotDutySaas, PilotDutyFunctions and the iOS relay.",
   "private": true,
   "license": "UNLICENSED",

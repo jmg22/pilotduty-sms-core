@@ -117,4 +117,40 @@ export declare function unreachableLiftPatch(at: Date): {
     unreachableSuspended: false;
     unreachableLiftedAt: Date;
 };
+/**
+ * TOT-207 / P50 §2 — projection de `sms_consent.evidence` vers l'état de
+ * livraison affiché sur un suiveur (`flightFollowingFollowers/{id}.smsDelivery`).
+ *
+ * Une seule définition de forme pour les deux dépôts : Functions et le Manager
+ * l'appellent au moment où ils posent (ou lèvent) une marque, au lieu de
+ * recopier chacun sa propre logique de badge — c'est le trou de recopie que
+ * P50 §2 ferme, sans nouveau déclencheur.
+ *
+ * Priorité : `invalid` > `landline` > `unreachable_suspended` > `unreachable`
+ * (des échecs comptés, pas encore bloquants) > `ok`. Elle suit celle de
+ * `decideConsent`, à un détail près : `unreachable` n'y refuse rien — c'est une
+ * information pour l'exploitant, pas un blocage, et l'interface peut n'afficher
+ * que les états bloquants (`isBlockingDeliveryState`).
+ */
+export type DeliveryState = 
+/** Aucune marque : rien à signaler. */
+'ok'
+/** 30003 / 30005 comptés, sous le seuil de suspension. N'empêche aucun envoi. */
+ | 'unreachable'
+/** Suspendu après `UNREACHABLE_SUSPEND_AFTER`. Bloque tout sauf `safety` (P50 §0). */
+ | 'unreachable_suspended'
+/** 30006. Bloque toutes les catégories. */
+ | 'landline'
+/** 21211 / 21614 / 21408. Bloque toutes les catégories. */
+ | 'invalid';
+export interface DeliveryProjection {
+    state: DeliveryState;
+    /** Horodatage de la dernière erreur Twilio connue (absent si aucune). */
+    at?: Date;
+    /** Dernier code Twilio connu (absent si aucun). */
+    code?: number;
+}
+/** États qui empêchent au moins une catégorie de partir — ceux qui méritent un badge. */
+export declare function isBlockingDeliveryState(state: DeliveryState): boolean;
+export declare function projectDeliveryState(evidence: TwilioErrorEvidence | null | undefined): DeliveryProjection;
 //# sourceMappingURL=errors.d.ts.map
