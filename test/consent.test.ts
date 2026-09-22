@@ -68,8 +68,7 @@ describe('decideConsent — delivery marks refuse at send (TOT-207, P49 §5, v0.
   it.each([
     ['invalid', { invalid: true }],
     ['landline', { landline: true }],
-    ['unreachable_suspended', { unreachableSuspended: true, unreachableCount: 3 }],
-  ] as const)('%s refuses every status and every category, safety included', (reason, evidence) => {
+  ] as const)('%s refuses every status and EVERY category, safety included — the line cannot receive (P50 §0)', (reason, evidence) => {
     for (const status of STATUSES) {
       for (const category of CATEGORIES) {
         expect(decideConsent({ status, evidence }, category, { confirmedBookingExists: true })).toEqual({
@@ -79,6 +78,33 @@ describe('decideConsent — delivery marks refuse at send (TOT-207, P49 §5, v0.
           forceFooter: true,
         });
       }
+    }
+  });
+
+  it('unreachable_suspended refuses transactional and reminder, but `safety` goes through (P50 §0 — a phone that was off three times is not an invalid number)', () => {
+    const evidence = { unreachableSuspended: true, unreachableCount: 3 };
+    for (const status of STATUSES) {
+      for (const category of ['transactional', 'reminder'] as const) {
+        expect(decideConsent({ status, evidence }, category, { confirmedBookingExists: true })).toMatchObject({
+          allow: false,
+          reason: 'unreachable_suspended',
+        });
+      }
+      // The overdue alert must still go out — same exemption as the global daily cap.
+      expect(decideConsent({ status, evidence }, 'safety')).toEqual({
+        allow: true,
+        effectiveStatus: status,
+        forceFooter: status !== 'opted_in',
+      });
+    }
+  });
+
+  it('a suspended number that is ALSO invalid or landline stays refused, safety included — the stronger mark wins', () => {
+    for (const [reason, extra] of [['invalid', { invalid: true }], ['landline', { landline: true }]] as const) {
+      expect(decideConsent({ status: 'attested', evidence: { unreachableSuspended: true, ...extra } }, 'safety')).toMatchObject({
+        allow: false,
+        reason,
+      });
     }
   });
 

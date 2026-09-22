@@ -149,8 +149,10 @@ callback (numbers and numeric strings; anything else is `log_only`).
 
 **Marks refuse at send (v0.2.1)**: a consent document with `evidence.invalid`,
 `evidence.landline` or `evidence.unreachableSuspended` is `suppressed` with the
-reason `invalid` / `landline` / `unreachable_suspended` — every status, every
-category, before counters and Twilio. `unreachableLiftPatch(at)` lifts a
+reason `invalid` / `landline` / `unreachable_suspended` — every status, before
+counters and Twilio. `invalid` and `landline` refuse every category, `safety`
+included (the line cannot receive); `unreachableSuspended` lets `safety` through
+(P50 §0 — same exemption as the global daily cap). `unreachableLiftPatch(at)` lifts a
 suspension (any inbound SMS from the number, or the admin retry); `invalid` and
 `landline` are never lifted. **No raw Twilio text (v0.2.1)**: the message of
 `describeTwilioError` — hence `errorMessage` on the result and in

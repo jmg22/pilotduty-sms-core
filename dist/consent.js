@@ -15,12 +15,16 @@ exports.decideConsent = decideConsent;
  * `attested` is never promoted to `opted_in` here — only a recipient action
  * does that (TOT-193).
  *
- * Delivery marks (TOT-207, P49 §5), checked right after `opted_out` and for
- * EVERY status and category — "never try again" is about the line, not about
- * consent: `evidence.invalid` → `invalid`, `evidence.landline` → `landline`,
- * `evidence.unreachableSuspended` → `unreachable_suspended`. Only the boolean
- * marks are read (written by `consentEvidencePatch`, the suspension lifted
- * with `unreachableLiftPatch`), never the raw counter.
+ * Delivery marks (TOT-207, P49 §5, P50 §0), checked right after `opted_out` —
+ * "never try again" is about the line, not about consent:
+ *
+ * | mark                            | refuses                                  |
+ * | `evidence.invalid`              | every status AND every category, `safety` included |
+ * | `evidence.landline`             | every status AND every category, `safety` included |
+ * | `evidence.unreachableSuspended` | every status, EXCEPT `category === 'safety'` (P50 §0) |
+ *
+ * Only the boolean marks are read (written by `consentEvidencePatch`, the
+ * suspension lifted with `unreachableLiftPatch`), never the raw counter.
  */
 function decideConsent(consent, category, ctx = {}) {
     const status = consent?.status ?? 'unknown';
@@ -40,7 +44,13 @@ function decideConsent(consent, category, ctx = {}) {
             : marks?.unreachableSuspended === true
                 ? 'unreachable_suspended'
                 : undefined;
-    if (marked) {
+    // P50 §0 — `safety` passe outre `unreachable_suspended` : un téléphone éteint
+    // trois fois n'est pas un numéro invalide, et c'est exactement le cas où
+    // l'alerte de retard doit partir (même exemption que pour le plafond global).
+    // `invalid` et `landline` bloquent TOUTES les catégories, `safety` comprise :
+    // la ligne ne peut physiquement pas recevoir — un envoi n'y serait pas une
+    // sécurité mais une illusion de sécurité.
+    if (marked && !(marked === 'unreachable_suspended' && category === 'safety')) {
         return { allow: false, reason: marked, effectiveStatus: status, forceFooter: true };
     }
     if (status === 'opted_in') {

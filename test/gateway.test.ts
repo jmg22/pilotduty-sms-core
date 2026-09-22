@@ -133,8 +133,7 @@ describe('createSmsGateway — pipeline (TOT-187)', () => {
     it.each([
       ['invalid', { invalid: true }],
       ['landline', { landline: true }],
-      ['unreachable_suspended', { unreachableSuspended: true, unreachableCount: 3 }],
-    ] as const)('%s → suppressed with that reason, recorded, no counter, no Twilio — safety included', async (reason, evidence) => {
+    ] as const)('%s → suppressed with that reason, recorded, no counter, no Twilio — safety included (P50 §0)', async (reason, evidence) => {
       consentWith(evidence);
       for (const category of ['transactional', 'safety'] as const) {
         const r = await gateway.send(baseInput({ category }));
@@ -143,6 +142,18 @@ describe('createSmsGateway — pipeline (TOT-187)', () => {
       expect(store.messages.map((m) => m.suppressReason)).toEqual([reason, reason]);
       expect(twilio.calls).toHaveLength(0);
       expect(store.orgCounts.size).toBe(0);
+    });
+
+    it('unreachable_suspended → suppressed for transactional/reminder, but a safety alert is SENT and counted (P50 §0)', async () => {
+      consentWith({ unreachableSuspended: true, unreachableCount: 3 });
+      expect(await gateway.send(baseInput())).toMatchObject({ status: 'suppressed', reason: 'unreachable_suspended', detail: 'evidence.unreachable_suspended' });
+      expect(twilio.calls).toHaveLength(0);
+      expect(store.orgCounts.size).toBe(0);
+      const alert = await gateway.send(baseInput({ category: 'safety', templateId: 'takeoff', params: { pilot: 'Jean', airport: 'CYHU', callsign: 'C-GXYZ' } }));
+      expect(alert).toMatchObject({ status: 'sent' });
+      expect(twilio.calls).toHaveLength(1);
+      expect(store.orgCounts.size).toBe(1);
+      expect(store.messages.map((m) => m.status)).toEqual(['suppressed', 'queued']);
     });
 
     it('the mark of one organization does not block another consent document; a lifted suspension sends again', async () => {

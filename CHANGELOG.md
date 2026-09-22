@@ -2,7 +2,7 @@
 
 ## v0.2.1 — 2026-09-21
 
-Wave 4, lot 2 (decisions P49 §5–6, pilot review of Functions PR #14).
+Wave 4, lot 2 (decisions P49 §5–6 and **P50 §0**, pilot reviews of Functions PR #14).
 
 - **No raw Twilio text anymore.** `describeTwilioError().message` is passed
   through `redactPhoneNumbers` at the source (Twilio quotes the `To` number in
@@ -15,9 +15,14 @@ Wave 4, lot 2 (decisions P49 §5–6, pilot review of Functions PR #14).
   document carrying `evidence.invalid`, `evidence.landline` or
   `evidence.unreachableSuspended` is refused as `suppressed` with the new
   reasons **`invalid`**, **`landline`**, **`unreachable_suspended`**
-  (`SuppressReason`, `ConsentRefusalReason`), for every status and category,
-  before any counter or Twilio call. `opted_out` still wins. Only the boolean
-  marks are read, never the raw counter.
+  (`SuppressReason`, `ConsentRefusalReason`), before any counter or Twilio call.
+  `opted_out` still wins. Only the boolean marks are read, never the raw counter.
+  - `invalid` and `landline` refuse **every** category, `safety` included: the
+    line physically cannot receive, so sending would be an illusion of safety.
+  - `unreachableSuspended` refuses `transactional` and `reminder` but **not
+    `safety`** (P50 §0): a phone that was off three times is not an invalid
+    number, and the overdue alert must still go out — same exemption as the
+    global daily cap. The send is counted as usual.
 - `unreachableLiftPatch(at)` — the fields that lift a suspension
   (`unreachableCount: 0`, `unreachableSuspended: false`, `unreachableLiftedAt`):
   for the inbound webhook (any inbound SMS from the number) and the admin
