@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
+import { decideConsent } from '../src/consent';
 import {
   classifyTwilioError,
+  projectDeliveryState,
+  isBlockingDeliveryState,
   consentEvidencePatch,
   unreachableLiftPatch,
   describeTwilioError,
@@ -197,5 +200,73 @@ describe('consentEvidencePatch — effects on sms_consent.evidence', () => {
     for (const action of ['alert_fatal', 'opt_out_retroactive', 'carrier_filtered', 'log_only'] as const) {
       expect(consentEvidencePatch(action, { unreachableCount: 2 }, { code: 1, at })).toBeNull();
     }
+  });
+});
+
+describe('projectDeliveryState — badge du suiveur (P50 §2, v0.2.2)', () => {
+  const at = new Date('2026-09-22T03:00:00Z');
+
+  it('no evidence at all → ok, without at or code (the badge disappears entirely)', () => {
+    for (const evidence of [undefined, null, {}, { note: 'x' } as never]) {
+      expect(projectDeliveryState(evidence)).toEqual({ state: 'ok' });
+    }
+  });
+
+  it('carries the last Twilio code and timestamp for every non-ok state', () => {
+    expect(projectDeliveryState({ invalid: true, lastTwilioErrorCode: 21408, lastTwilioErrorAt: at })).toEqual({ state: 'invalid', at, code: 21408 });
+    expect(projectDeliveryState({ landline: true, lastTwilioErrorCode: 30006, lastTwilioErrorAt: at })).toEqual({ state: 'landline', at, code: 30006 });
+    expect(projectDeliveryState({ unreachableSuspended: true, unreachableCount: 3, lastTwilioErrorCode: 30003, lastTwilioErrorAt: at })).toEqual({ state: 'unreachable_suspended', at, code: 30003 });
+    expect(projectDeliveryState({ unreachableCount: 2, lastTwilioErrorCode: 30005, lastTwilioErrorAt: at })).toEqual({ state: 'unreachable', at, code: 30005 });
+  });
+
+  it('follows the decideConsent priority: invalid > landline > unreachable_suspended > unreachable', () => {
+    expect(projectDeliveryState({ invalid: true, landline: true, unreachableSuspended: true, unreachableCount: 9 }).state).toBe('invalid');
+    expect(projectDeliveryState({ landline: true, unreachableSuspended: true, unreachableCount: 9 }).state).toBe('landline');
+    expect(projectDeliveryState({ unreachableSuspended: true, unreachableCount: 9 }).state).toBe('unreachable_suspended');
+    expect(projectDeliveryState({ unreachableCount: 1 }).state).toBe('unreachable');
+  });
+
+  it('a lifted suspension goes straight back to ok, with no leftover badge', () => {
+    const lifted = { ...unreachableLiftPatch(at), lastTwilioErrorCode: 30003, lastTwilioErrorAt: at };
+    expect(projectDeliveryState(lifted)).toEqual({ state: 'ok' });
+  });
+
+  it('survives a corrupted or partial evidence map', () => {
+    expect(projectDeliveryState({ unreachableCount: Number.NaN }).state).toBe('ok');
+    expect(projectDeliveryState({ unreachableCount: -3 }).state).toBe('ok');
+    expect(projectDeliveryState({ unreachableCount: 'two' as unknown as number }).state).toBe('ok');
+    expect(projectDeliveryState({ invalid: 'true' as unknown as boolean }).state).toBe('ok');
+    // A code without a date, and a date without a code, are both fine.
+    expect(projectDeliveryState({ landline: true, lastTwilioErrorCode: 30006 })).toEqual({ state: 'landline', code: 30006 });
+    expect(projectDeliveryState({ landline: true, lastTwilioErrorAt: at })).toEqual({ state: 'landline', at });
+    expect(projectDeliveryState({ landline: true, lastTwilioErrorAt: '2026-09-22' as unknown as Date })).toEqual({ state: 'landline' });
+  });
+
+  it('is the exact mirror of decideConsent: every blocking state refuses at least one category, `unreachable` and `ok` refuse none', () => {
+    const cases = [
+      { evidence: { invalid: true }, blocking: true },
+      { evidence: { landline: true }, blocking: true },
+      { evidence: { unreachableSuspended: true }, blocking: true },
+      { evidence: { unreachableCount: 2 }, blocking: false },
+      { evidence: {}, blocking: false },
+    ];
+    for (const { evidence, blocking } of cases) {
+      const { state } = projectDeliveryState(evidence);
+      expect(isBlockingDeliveryState(state)).toBe(blocking);
+      const refusedSomewhere = (['transactional', 'reminder', 'safety'] as const).some(
+        (category) => !decideConsent({ status: 'attested', evidence }, category, { confirmedBookingExists: true }).allow,
+      );
+      expect(refusedSomewhere).toBe(blocking);
+    }
+  });
+
+  it('what a consumer writes after consentEvidencePatch is what the projection reports', () => {
+    let evidence = {};
+    for (let i = 1; i <= 3; i += 1) {
+      evidence = { ...evidence, ...consentEvidencePatch('unreachable_increment', evidence, { code: 30003, at })! };
+      expect(projectDeliveryState(evidence).state).toBe(i < 3 ? 'unreachable' : 'unreachable_suspended');
+    }
+    evidence = { ...evidence, ...consentEvidencePatch('mark_invalid', evidence, { code: 21408, at })! };
+    expect(projectDeliveryState(evidence)).toEqual({ state: 'invalid', at, code: 21408 });
   });
 });

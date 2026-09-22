@@ -50,6 +50,8 @@ export {
   twilioErrorClassOf,
   consentEvidencePatch,
   unreachableLiftPatch,
+  projectDeliveryState,
+  isBlockingDeliveryState,
   redactPhoneNumbers,
   TWILIO_ERROR_ACTIONS,
   TWILIO_ERROR_SEVERITIES,
@@ -60,6 +62,8 @@ export {
   type TwilioErrorClass,
   type TwilioErrorInfo,
   type TwilioErrorEvidence,
+  type DeliveryState,
+  type DeliveryProjection,
 } from './errors';
 export {
   reserveGlobalDailySlot,

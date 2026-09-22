@@ -1,5 +1,22 @@
 # Changelog
 
+## v0.2.2 — 2026-09-22
+
+Wave 4, lot 3 (decision P50 §2). Additive only: no behaviour change, no new
+dependency, nothing removed.
+
+- **`projectDeliveryState(evidence)` → `{ state, at, code }`** — the single
+  definition of the follower delivery badge, so Functions and the Manager stop
+  each copying their own (that is the cross-repo copy gap P50 §2 closes, with
+  no new trigger). `state` ∈ `invalid` > `landline` > `unreachable_suspended` >
+  `unreachable` (failures counted, nothing blocked yet) > `ok`, the same
+  priority as `decideConsent`; `at` / `code` carry the last Twilio error and
+  are omitted on `ok`, so a lifted suspension clears the badge entirely.
+- `isBlockingDeliveryState(state)` — the three states that actually refuse at
+  least one category, for interfaces that only want to show those.
+- A test pins the mirror property: a state is blocking **iff** `decideConsent`
+  refuses at least one category for the same evidence.
+
 ## v0.2.1 — 2026-09-21
 
 Wave 4, lot 2 (decisions P49 §5–6 and **P50 §0**, pilot reviews of Functions PR #14).
