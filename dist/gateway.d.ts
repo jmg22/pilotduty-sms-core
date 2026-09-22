@@ -123,7 +123,7 @@ export interface SmsGateway {
  *
  *  1. normalizePhone            → suppressed/invalid_phone
  *  2. sms_opt_outs              → suppressed/opted_out            (TOT-198)
- *  3. consent table             → suppressed/reminder_without_booking (TOT-193)
+ *  3. consent table + delivery marks → suppressed/reminder_without_booking|invalid|landline|unreachable_suspended (TOT-193, TOT-207)
  *  4. quiet hours (reminder)    → deferred/quiet_hours            (TOT-204)
  *  5. rate limits, org cap, then global daily slot → suppressed/rate_limited|org_cap|global_cap (TOT-209)
  *  6. compose + STOP footer + segments                             (TOT-199, TOT-240)

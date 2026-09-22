@@ -1,6 +1,14 @@
 import type { Consent, ConsentStatus, SmsCategory } from './types';
 
-export type ConsentRefusalReason = 'opted_out' | 'reminder_without_booking';
+export type ConsentRefusalReason =
+  | 'opted_out'
+  | 'reminder_without_booking'
+  /** TOT-207 marks (P49 §5) — `evidence.invalid`, 21211 / 21614 / 21408. Never lifted. */
+  | 'invalid'
+  /** `evidence.landline`, 30006. Never lifted. */
+  | 'landline'
+  /** `evidence.unreachableSuspended`, three 30003 / 30005. Lifted by any inbound SMS or an admin retry. */
+  | 'unreachable_suspended';
 
 export interface ConsentDecision {
   allow: boolean;
@@ -33,9 +41,20 @@ export interface ConsentContext {
  *
  * `attested` is never promoted to `opted_in` here — only a recipient action
  * does that (TOT-193).
+ *
+ * Delivery marks (TOT-207, P49 §5, P50 §0), checked right after `opted_out` —
+ * "never try again" is about the line, not about consent:
+ *
+ * | mark                            | refuses                                  |
+ * | `evidence.invalid`              | every status AND every category, `safety` included |
+ * | `evidence.landline`             | every status AND every category, `safety` included |
+ * | `evidence.unreachableSuspended` | every status, EXCEPT `category === 'safety'` (P50 §0) |
+ *
+ * Only the boolean marks are read (written by `consentEvidencePatch`, the
+ * suspension lifted with `unreachableLiftPatch`), never the raw counter.
  */
 export function decideConsent(
-  consent: Pick<Consent, 'status'> | null | undefined,
+  consent: (Pick<Consent, 'status'> & Partial<Pick<Consent, 'evidence'>>) | null | undefined,
   category: SmsCategory,
   ctx: ConsentContext = {},
 ): ConsentDecision {
@@ -48,6 +67,25 @@ export function decideConsent(
       effectiveStatus: status,
       forceFooter: true,
     };
+  }
+
+  const marks = consent?.evidence;
+  const marked: ConsentRefusalReason | undefined =
+    marks?.invalid === true
+      ? 'invalid'
+      : marks?.landline === true
+        ? 'landline'
+        : marks?.unreachableSuspended === true
+          ? 'unreachable_suspended'
+          : undefined;
+  // P50 §0 — `safety` passe outre `unreachable_suspended` : un téléphone éteint
+  // trois fois n'est pas un numéro invalide, et c'est exactement le cas où
+  // l'alerte de retard doit partir (même exemption que pour le plafond global).
+  // `invalid` et `landline` bloquent TOUTES les catégories, `safety` comprise :
+  // la ligne ne peut physiquement pas recevoir — un envoi n'y serait pas une
+  // sécurité mais une illusion de sécurité.
+  if (marked && !(marked === 'unreachable_suspended' && category === 'safety')) {
+    return { allow: false, reason: marked, effectiveStatus: status, forceFooter: true };
   }
 
   if (status === 'opted_in') {

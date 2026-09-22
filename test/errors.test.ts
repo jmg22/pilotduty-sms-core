@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   classifyTwilioError,
   consentEvidencePatch,
+  unreachableLiftPatch,
   describeTwilioError,
   isPermanentTwilioError,
   parseTwilioErrorCode,
@@ -107,6 +108,15 @@ describe('describeTwilioError', () => {
     expect(describeTwilioError(null)).toMatchObject({ action: 'log_only', code: undefined });
   });
 
+  it('v0.2.1: the message is redacted at the source — no raw Twilio text leaves describeTwilioError', () => {
+    const quoted = describeTwilioError({ code: 21211, status: 400, message: "The 'To' number +15142905402 is not a valid phone number.", moreInfo: 'https://www.twilio.com/docs/errors/21211' });
+    expect(quoted.message).toBe("The 'To' number [redacted-number] is not a valid phone number.");
+    expect(quoted.moreInfo).toBe('https://www.twilio.com/docs/errors/21211');
+    expect(JSON.stringify(quoted)).not.toContain('5142905402');
+    expect(describeTwilioError(new Error('connect ETIMEDOUT while sending to (514) 290-5402')).message).not.toMatch(/290/);
+    expect(describeTwilioError('plain string 15142905402').message).toBe('plain string [redacted-number]');
+  });
+
   it('keeps the v0.1 class vocabulary, one class per action', () => {
     expect(twilioErrorClassOf('alert_fatal')).toBe('unregistered_sender');
     expect(twilioErrorClassOf('opt_out_retroactive')).toBe('opted_out');
@@ -174,6 +184,13 @@ describe('consentEvidencePatch — effects on sms_consent.evidence', () => {
   it('marks landline and invalid', () => {
     expect(consentEvidencePatch('mark_landline', null, { code: 30006, at })).toEqual({ landline: true, lastTwilioErrorCode: 30006, lastTwilioErrorAt: at });
     expect(consentEvidencePatch('mark_invalid', null, { code: 21408, at })).toEqual({ invalid: true, lastTwilioErrorCode: 21408, lastTwilioErrorAt: at });
+  });
+
+  it('unreachableLiftPatch clears the suspension and the counter, nothing else (invalid / landline are never lifted)', () => {
+    expect(unreachableLiftPatch(at)).toEqual({ unreachableCount: 0, unreachableSuspended: false, unreachableLiftedAt: at });
+    // After a lift the count starts again from zero.
+    expect(consentEvidencePatch('unreachable_increment', unreachableLiftPatch(at), { code: 30003, at })).toMatchObject({ unreachableCount: 1 });
+    expect(consentEvidencePatch('unreachable_increment', unreachableLiftPatch(at), { code: 30003, at })?.unreachableSuspended).toBeUndefined();
   });
 
   it('has no per-number effect for the other actions', () => {

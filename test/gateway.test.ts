@@ -123,6 +123,54 @@ describe('createSmsGateway — pipeline (TOT-187)', () => {
     });
   });
 
+  describe('step 3b — delivery marks refuse at send (TOT-207, P49 §5, v0.2.1)', () => {
+    const consentWith = (evidence: Record<string, unknown>) =>
+      store.consents.set(`+15142905402_${ORG}`, {
+        phone: '+15142905402', organizationId: ORG, status: 'attested', source: 'follower_form',
+        collectedAt: NOW, collectedBy: 'u1', evidence,
+      });
+
+    it.each([
+      ['invalid', { invalid: true }],
+      ['landline', { landline: true }],
+    ] as const)('%s → suppressed with that reason, recorded, no counter, no Twilio — safety included (P50 §0)', async (reason, evidence) => {
+      consentWith(evidence);
+      for (const category of ['transactional', 'safety'] as const) {
+        const r = await gateway.send(baseInput({ category }));
+        expect(r).toMatchObject({ status: 'suppressed', reason, detail: `evidence.${reason}` });
+      }
+      expect(store.messages.map((m) => m.suppressReason)).toEqual([reason, reason]);
+      expect(twilio.calls).toHaveLength(0);
+      expect(store.orgCounts.size).toBe(0);
+    });
+
+    it('unreachable_suspended → suppressed for transactional/reminder, but a safety alert is SENT and counted (P50 §0)', async () => {
+      consentWith({ unreachableSuspended: true, unreachableCount: 3 });
+      expect(await gateway.send(baseInput())).toMatchObject({ status: 'suppressed', reason: 'unreachable_suspended', detail: 'evidence.unreachable_suspended' });
+      expect(twilio.calls).toHaveLength(0);
+      expect(store.orgCounts.size).toBe(0);
+      const alert = await gateway.send(baseInput({ category: 'safety', templateId: 'takeoff', params: { pilot: 'Jean', airport: 'CYHU', callsign: 'C-GXYZ' } }));
+      expect(alert).toMatchObject({ status: 'sent' });
+      expect(twilio.calls).toHaveLength(1);
+      expect(store.orgCounts.size).toBe(1);
+      expect(store.messages.map((m) => m.status)).toEqual(['suppressed', 'queued']);
+    });
+
+    it('the mark of one organization does not block another consent document; a lifted suspension sends again', async () => {
+      consentWith({ unreachableSuspended: true, unreachableCount: 3 });
+      expect((await gateway.send(baseInput({ organizationId: 'otherOrg' }))).status).toBe('sent');
+      consentWith({ unreachableSuspended: false, unreachableCount: 0 });
+      expect((await gateway.send(baseInput())).status).toBe('sent');
+    });
+
+    it('duplicate log never carries the recipient embedded in an idempotency key', async () => {
+      store.idempotencyKeys.add('onboarding:pilot-1:+15142905402');
+      await gateway.send(baseInput({ idempotencyKey: 'onboarding:pilot-1:+15142905402' }));
+      expect(JSON.stringify(logs.entries)).not.toContain('5142905402');
+      expect(JSON.stringify(logs.entries)).toContain('onboarding:pilot-1:[redacted-number]');
+    });
+  });
+
   describe('step 4 — quiet hours (TOT-204)', () => {
     it('defers a reminder at 22:00 recipient time to 08:00, writes nothing, calls nothing', async () => {
       const g = createSmsGateway({
@@ -345,10 +393,11 @@ describe('createSmsGateway — pipeline (TOT-187)', () => {
       expect(logs.entries.some((e) => e.level === 'error' && e.msg.includes('30034'))).toBe(true);
     });
 
-    it('never logs the number Twilio quotes in its message', async () => {
+    it('never logs the number Twilio quotes in its message — nor returns it, nor stores it in errorMessage (v0.2.1)', async () => {
       twilio.nextError = twilioError(21211, "The 'To' number +15142905402 is not a valid phone number");
       const r = await gateway.send(baseInput());
-      expect(r).toMatchObject({ status: 'failed', errorAction: 'mark_invalid' });
+      expect(r).toMatchObject({ status: 'failed', errorAction: 'mark_invalid', errorMessage: "The 'To' number [redacted-number] is not a valid phone number" });
+      expect(store.messages[0]).toMatchObject({ status: 'failed', errorCode: 21211, errorMessage: "The 'To' number [redacted-number] is not a valid phone number" });
       expect(JSON.stringify(logs.entries)).not.toContain('5142905402');
       expect(logs.entries.find((e) => e.msg === 'twilio send failed')?.ctx).toMatchObject({ code: 21211, action: 'mark_invalid', severity: 'warning' });
     });

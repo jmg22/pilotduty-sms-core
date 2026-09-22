@@ -73,6 +73,11 @@ export declare function redactPhoneNumbers(text: string): string;
 export interface TwilioErrorInfo extends TwilioErrorClassification {
     code?: number;
     status?: number;
+    /**
+     * ALREADY REDACTED (`redactPhoneNumbers`, v0.2.1): the raw Twilio text never
+     * leaves this function — not to a log, not to `FailedResult.errorMessage`,
+     * not to `sms_messages.errorMessage`.
+     */
     message: string;
     moreInfo?: string;
     class: TwilioErrorClass;
@@ -83,6 +88,7 @@ export declare function describeTwilioError(err: unknown): TwilioErrorInfo;
 export interface TwilioErrorEvidence {
     unreachableCount?: number;
     unreachableSuspended?: boolean;
+    unreachableLiftedAt?: Date;
     landline?: boolean;
     invalid?: boolean;
     lastTwilioErrorCode?: number;
@@ -100,4 +106,15 @@ export declare function consentEvidencePatch(action: TwilioErrorAction, current:
     code?: number;
     at: Date;
 }): TwilioErrorEvidence | null;
+/**
+ * P49 §5 — what lifts `unreachable_suspended`: ANY inbound SMS from the number
+ * (proof it is reachable) or the admin "retry" action. `invalid` and
+ * `landline` are never lifted (a corrected number is another document).
+ * Merge this into `sms_consent.evidence` of every consent document of the number.
+ */
+export declare function unreachableLiftPatch(at: Date): {
+    unreachableCount: 0;
+    unreachableSuspended: false;
+    unreachableLiftedAt: Date;
+};
 //# sourceMappingURL=errors.d.ts.map

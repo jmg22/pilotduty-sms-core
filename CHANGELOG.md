@@ -1,5 +1,36 @@
 # Changelog
 
+## v0.2.1 — 2026-09-21
+
+Wave 4, lot 2 (decisions P49 §5–6 and **P50 §0**, pilot reviews of Functions PR #14).
+
+- **No raw Twilio text anymore.** `describeTwilioError().message` is passed
+  through `redactPhoneNumbers` at the source (Twilio quotes the `To` number in
+  21211 and others), so the gateway log, `FailedResult.errorMessage` and
+  `sms_messages.errorMessage` are all redacted — a consumer that logs
+  `errorMessage` no longer leaks the recipient. Network / non-Twilio
+  rejections go through the same path. The `sms duplicate skipped` log also
+  redacts the idempotency key (callers build it from the recipient).
+- **Delivery marks refuse at send** (`decideConsent`, gateway step 3): a consent
+  document carrying `evidence.invalid`, `evidence.landline` or
+  `evidence.unreachableSuspended` is refused as `suppressed` with the new
+  reasons **`invalid`**, **`landline`**, **`unreachable_suspended`**
+  (`SuppressReason`, `ConsentRefusalReason`), before any counter or Twilio call.
+  `opted_out` still wins. Only the boolean marks are read, never the raw counter.
+  - `invalid` and `landline` refuse **every** category, `safety` included: the
+    line physically cannot receive, so sending would be an illusion of safety.
+  - `unreachableSuspended` refuses `transactional` and `reminder` but **not
+    `safety`** (P50 §0): a phone that was off three times is not an invalid
+    number, and the overdue alert must still go out — same exemption as the
+    global daily cap. The send is counted as usual.
+- `unreachableLiftPatch(at)` — the fields that lift a suspension
+  (`unreachableCount: 0`, `unreachableSuspended: false`, `unreachableLiftedAt`):
+  for the inbound webhook (any inbound SMS from the number) and the admin
+  "retry" action. `invalid` / `landline` are never lifted.
+- Not breaking: new union members only. A consumer with an exhaustive `switch`
+  on `SuppressReason` must add the three reasons (the iOS relay maps them to
+  its contract v1.3: `400 invalid_recipient` / `400 unreachable_suspended`).
+
 ## v0.2.0 — 2026-09-21
 
 Wave 4, lot 1 (decisions P48 / P49): the Twilio error table (TOT-207) and the
